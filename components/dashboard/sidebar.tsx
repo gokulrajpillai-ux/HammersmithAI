@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation"
 import Link from "next/link"
 import {
   LayoutDashboard,
-  FileText,
   AlertTriangle,
   BarChart3,
   Settings,
@@ -17,6 +16,9 @@ import {
   ShieldCheck,
   FileCode,
   Wallet,
+  UserCheck,
+  Lock,
+  IndianRupee,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -30,8 +32,11 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: "Dashboard", icon: <LayoutDashboard className="size-5" />, href: "/" },
+  { label: "ABHA Onboarding", icon: <UserCheck className="size-5" />, href: "/abha-onboarding" },
+  { label: "Consent Manager", icon: <Lock className="size-5" />, href: "/consent-manager" },
   { label: "Prior Auth", icon: <ShieldCheck className="size-5" />, href: "/prior-auth" },
   { label: "Medical Coding", icon: <FileCode className="size-5" />, href: "/medical-coding" },
+  { label: "Payer Claims", icon: <IndianRupee className="size-5" />, href: "/payer-claims" },
   { label: "Denials", icon: <AlertTriangle className="size-5" />, href: "/denial-management" },
   { label: "Patient Portal", icon: <Wallet className="size-5" />, href: "/patient-portal" },
   { label: "Analytics", icon: <BarChart3 className="size-5" />, href: "#" },
