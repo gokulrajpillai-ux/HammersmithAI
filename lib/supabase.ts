@@ -37,6 +37,39 @@ export interface Profile {
   role?: string
 }
 
+export interface MedicalPackage {
+  id: string
+  package_code: string
+  procedure_name: string
+  kasp_rate_2026: number
+  category?: string
+}
+
+export interface Claim {
+  id: string
+  org_id: string
+  patient_id: string
+  package_id: string
+  hospital_bill_amount: number
+  status: 'pending' | 'approved' | 'denied' | 'under_review'
+  admission_date?: string
+  clinical_notes?: string
+  created_at?: string
+  // Joined data
+  patients?: {
+    id: string
+    first_name: string
+    last_name: string
+    abha_id: string
+  }
+  medical_packages?: {
+    id: string
+    package_code: string
+    procedure_name: string
+    kasp_rate_2026: number
+  }
+}
+
 // Default organization ID for Hammersmith AI Clinic (demo fallback)
 export const DEFAULT_ORG_ID = '0ec1ab3d-4a89-4dea-aa25-23e8b4016b5d'
 

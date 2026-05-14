@@ -1,102 +1,498 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout"
-import { ClaimsHeader } from "@/components/claims-workspace/header"
-import { ClaimsQueue } from "@/components/claims-workspace/claims-queue"
-import { AIAnalysisPanel } from "@/components/claims-workspace/ai-analysis-panel"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
+import { Skeleton } from "@/components/ui/skeleton"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { 
+  IndianRupee, 
+  AlertTriangle, 
+  TrendingDown, 
+  Sparkles, 
+  RefreshCw,
+  CheckCircle,
+  Clock,
+  XCircle,
+  FileSearch,
+  Home,
+  ChevronRight
+} from "lucide-react"
+import { toast } from "sonner"
+import { createClient, isSupabaseConfigured, DEFAULT_ORG_ID } from "@/lib/supabase"
+import type { Claim } from "@/lib/supabase"
 
-export interface ClaimData {
-  id: string
-  patientName: string
-  abhaId: string
-  tpa: string
-  tpaType: "government" | "private"
-  status: "Pending" | "In Review" | "Approved" | "Denied" | "Appealed"
-  amount: string
-  procedureCode: string
-  admissionDate: string
-  clinicalNotes: string
-}
-
-const mockClaims: ClaimData[] = [
+// Mock data for when Supabase is not configured or no data exists
+const mockClaims: Claim[] = [
   {
-    id: "CLM-2026-8901",
-    patientName: "Rajesh Kumar",
-    abhaId: "91-2345-6789-0123",
-    tpa: "PM-JAY",
-    tpaType: "government",
-    status: "Pending",
-    amount: "₹1,25,000",
-    procedureCode: "PMJAY-KNEE-001",
-    admissionDate: "12 May 2026",
-    clinicalNotes: "Patient: Rajesh Kumar, Age: 58, Male\n\nChief Complaint: Right knee pain and difficulty walking for 6 months\n\nHistory of Present Illness (HPI):\nThe patient presents with progressive right knee pain that has worsened over the past 6 months. Pain is described as constant, dull aching with sharp exacerbations during weight-bearing activities. Patient reports morning stiffness lasting >30 minutes. Previous conservative management including physiotherapy and NSAIDs provided minimal relief.\n\nPast Medical History:\n- Type 2 Diabetes Mellitus (controlled on Metformin)\n- Hypertension (controlled on Amlodipine)\n- No known drug allergies\n\nPhysical Examination:\n- Right knee: Moderate effusion, crepitus on movement\n- Range of motion: Flexion 90°, Extension -10°\n- Varus deformity noted\n- Tenderness along medial joint line\n\nRadiological Findings:\nX-ray Right Knee (AP/Lateral):\n- Kellgren-Lawrence Grade IV osteoarthritis\n- Complete loss of medial joint space\n- Large osteophytes at tibial and femoral margins\n- Subchondral sclerosis and cysts present\n\nAssessment & Plan:\n1. Severe tricompartmental osteoarthritis right knee\n2. Recommended: Total Knee Replacement (TKR)\n3. Pre-operative cardiac clearance obtained\n4. Procedure scheduled under PM-JAY coverage"
+    id: "clm-001",
+    org_id: DEFAULT_ORG_ID,
+    patient_id: "pat-001",
+    package_id: "pkg-001",
+    hospital_bill_amount: 145000,
+    status: "pending",
+    admission_date: "2026-05-10",
+    clinical_notes: "Total Knee Replacement - Right knee severe osteoarthritis",
+    patients: {
+      id: "pat-001",
+      first_name: "Rajesh",
+      last_name: "Kumar",
+      abha_id: "91-2345-6789-0123"
+    },
+    medical_packages: {
+      id: "pkg-001",
+      package_code: "GS001A",
+      procedure_name: "Total Knee Replacement (Primary)",
+      kasp_rate_2026: 125000
+    }
   },
   {
-    id: "CLM-2026-8902",
-    patientName: "Priya Sharma",
-    abhaId: "91-3456-7890-1234",
-    tpa: "Star Health Insurance",
-    tpaType: "private",
-    status: "In Review",
-    amount: "₹2,45,000",
-    procedureCode: "CPT-27447",
-    admissionDate: "10 May 2026",
-    clinicalNotes: "Patient: Priya Sharma, Age: 45, Female\n\nChief Complaint: Severe lower back pain radiating to left leg for 3 months\n\nHistory of Present Illness (HPI):\nPatient reports severe lower back pain with radiculopathy to left lower extremity. Pain rated 8/10, worse with sitting and bending. Associated numbness and tingling in L5-S1 dermatome. Failed 6 weeks of conservative management including physical therapy, epidural steroid injections, and oral medications.\n\nNeurological Examination:\n- Left foot dorsiflexion weakness (4/5)\n- Diminished sensation L5 dermatome\n- Positive straight leg raise at 30°\n- Absent left ankle reflex\n\nMRI Lumbar Spine:\n- Large L4-L5 disc herniation with significant foraminal stenosis\n- Compression of left L5 nerve root\n- Degenerative changes at L3-L4\n\nAssessment & Plan:\n1. L4-L5 disc herniation with radiculopathy\n2. Failed conservative management\n3. Recommended: Microdiscectomy L4-L5\n4. Surgery indicated due to progressive neurological deficit"
+    id: "clm-002",
+    org_id: DEFAULT_ORG_ID,
+    patient_id: "pat-002",
+    package_id: "pkg-002",
+    hospital_bill_amount: 85000,
+    status: "approved",
+    admission_date: "2026-05-08",
+    clinical_notes: "Cataract surgery with IOL implantation - Phacoemulsification",
+    patients: {
+      id: "pat-002",
+      first_name: "Priya",
+      last_name: "Sharma",
+      abha_id: "91-3456-7890-1234"
+    },
+    medical_packages: {
+      id: "pkg-002",
+      package_code: "OP002A",
+      procedure_name: "Cataract Surgery (Phaco + IOL)",
+      kasp_rate_2026: 90000
+    }
   },
   {
-    id: "CLM-2026-8903",
-    patientName: "Amit Patel",
-    abhaId: "91-4567-8901-2345",
-    tpa: "ICICI Lombard",
-    tpaType: "private",
-    status: "Denied",
-    amount: "₹3,80,000",
-    procedureCode: "CPT-33533",
-    admissionDate: "08 May 2026",
-    clinicalNotes: "Patient: Amit Patel, Age: 62, Male\n\nChief Complaint: Chest pain on exertion, breathlessness\n\nHistory of Present Illness (HPI):\nPatient presents with Canadian Cardiovascular Society Class III angina. Symptoms have progressed despite optimal medical therapy including dual antiplatelet, statin, beta-blocker, and nitrates. Recent episode of unstable angina requiring hospitalization.\n\nCoronary Angiography Findings:\n- Left Main: 50% stenosis\n- LAD: 90% proximal stenosis, 70% mid stenosis\n- LCx: 85% stenosis\n- RCA: 80% proximal stenosis\n- SYNTAX Score: 28 (Intermediate)\n\nEchocardiography:\n- LVEF: 45%\n- Regional wall motion abnormality in LAD territory\n- No significant valvular disease\n\nAssessment & Plan:\n1. Triple vessel coronary artery disease\n2. SYNTAX score favors surgical revascularization\n3. Recommended: CABG x3 (LIMA-LAD, SVG-OM, SVG-RCA)\n4. Pre-operative optimization ongoing"
+    id: "clm-003",
+    org_id: DEFAULT_ORG_ID,
+    patient_id: "pat-003",
+    package_id: "pkg-003",
+    hospital_bill_amount: 380000,
+    status: "under_review",
+    admission_date: "2026-05-05",
+    clinical_notes: "CABG x3 - Triple vessel disease, LIMA-LAD, SVG-OM, SVG-RCA",
+    patients: {
+      id: "pat-003",
+      first_name: "Amit",
+      last_name: "Patel",
+      abha_id: "91-4567-8901-2345"
+    },
+    medical_packages: {
+      id: "pkg-003",
+      package_code: "CV001A",
+      procedure_name: "CABG (Coronary Artery Bypass Graft)",
+      kasp_rate_2026: 350000
+    }
   },
   {
-    id: "CLM-2026-8904",
-    patientName: "Neha Gupta",
-    abhaId: "91-5678-9012-3456",
-    tpa: "CGHS",
-    tpaType: "government",
-    status: "Approved",
-    amount: "₹85,000",
-    procedureCode: "CGHS-CATARACT-001",
-    admissionDate: "05 May 2026",
-    clinicalNotes: "Patient: Neha Gupta, Age: 68, Female\n\nChief Complaint: Progressive blurring of vision in right eye for 1 year\n\nHistory of Present Illness (HPI):\nPatient reports gradual deterioration of vision in right eye affecting daily activities including reading and driving. No history of trauma, eye surgery, or steroid use.\n\nOphthalmic Examination:\n- Visual Acuity: RE 6/36, LE 6/9\n- IOP: RE 14mmHg, LE 12mmHg\n- Slit Lamp: Grade III nuclear sclerosis RE, Grade I LE\n- Fundus: Normal both eyes\n\nAssessment & Plan:\n1. Mature senile cataract right eye\n2. Recommended: Phacoemulsification with IOL implantation\n3. Standard pre-operative workup completed\n4. Procedure approved under CGHS guidelines"
+    id: "clm-004",
+    org_id: DEFAULT_ORG_ID,
+    patient_id: "pat-004",
+    package_id: "pkg-004",
+    hospital_bill_amount: 95000,
+    status: "denied",
+    admission_date: "2026-05-03",
+    clinical_notes: "Laparoscopic Cholecystectomy - Symptomatic gallstones",
+    patients: {
+      id: "pat-004",
+      first_name: "Neha",
+      last_name: "Gupta",
+      abha_id: "91-5678-9012-3456"
+    },
+    medical_packages: {
+      id: "pkg-004",
+      package_code: "GS002A",
+      procedure_name: "Laparoscopic Cholecystectomy",
+      kasp_rate_2026: 75000
+    }
   }
 ]
 
+// AI Audit suggestions based on package codes
+const aiSuggestions: Record<string, { suggestion: string; potentialIncrease: number }> = {
+  "GS001A": {
+    suggestion: "Procedure matches GS001B (Complex TKR with bone grafting) instead of GS001A. Patient X-ray shows subchondral cysts requiring additional grafting.",
+    potentialIncrease: 15000
+  },
+  "OP002A": {
+    suggestion: "Documentation supports OP002B (Premium IOL) classification. Multifocal IOL implanted per operative notes.",
+    potentialIncrease: 8000
+  },
+  "CV001A": {
+    suggestion: "Clinical notes indicate valve repair was also performed. Recommend CV001B (CABG + Valve) for accurate coding.",
+    potentialIncrease: 45000
+  },
+  "GS002A": {
+    suggestion: "Procedure complexity matches GS002B (Complex Cholecystectomy with CBD exploration) based on operative findings.",
+    potentialIncrease: 12000
+  }
+}
+
 export default function ClaimsWorkspacePage() {
-  const [selectedClaim, setSelectedClaim] = useState<ClaimData | null>(null)
-  const [deidentifyPII, setDeidentifyPII] = useState(false)
+  const [claims, setClaims] = useState<Claim[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [auditingClaimId, setAuditingClaimId] = useState<string | null>(null)
+  const [auditResults, setAuditResults] = useState<Record<string, { suggestion: string; potentialIncrease: number }>>({})
+
+  // Fetch claims from Supabase
+  const fetchClaims = async () => {
+    setIsLoading(true)
+    
+    if (!isSupabaseConfigured()) {
+      // Use mock data if Supabase is not configured
+      setClaims(mockClaims)
+      setIsLoading(false)
+      toast.info("Demo Mode", {
+        description: "Using mock data. Configure Supabase for live data."
+      })
+      return
+    }
+
+    try {
+      const supabase = createClient()
+      
+      const { data, error } = await supabase
+        .from('claims')
+        .select(`
+          *,
+          patients (
+            id,
+            first_name,
+            last_name,
+            abha_id
+          ),
+          medical_packages (
+            id,
+            package_code,
+            procedure_name,
+            kasp_rate_2026
+          )
+        `)
+        .eq('org_id', DEFAULT_ORG_ID)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error("[v0] Error fetching claims:", error)
+        toast.error("Failed to fetch claims", {
+          description: error.message
+        })
+        // Fall back to mock data
+        setClaims(mockClaims)
+      } else if (data && data.length > 0) {
+        setClaims(data as Claim[])
+        toast.success("Claims loaded", {
+          description: `Fetched ${data.length} claims from database`
+        })
+      } else {
+        // No data in database, use mock
+        setClaims(mockClaims)
+        toast.info("No claims found", {
+          description: "Displaying sample data"
+        })
+      }
+    } catch (err) {
+      console.error("[v0] Unexpected error:", err)
+      setClaims(mockClaims)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchClaims()
+  }, [])
+
+  // Run AI Audit for a specific claim
+  const runAIAudit = async (claim: Claim) => {
+    const packageCode = claim.medical_packages?.package_code
+    if (!packageCode) return
+
+    setAuditingClaimId(claim.id)
+
+    // Simulate AI analysis
+    await new Promise(resolve => setTimeout(resolve, 2500))
+
+    const suggestion = aiSuggestions[packageCode]
+    if (suggestion) {
+      setAuditResults(prev => ({
+        ...prev,
+        [claim.id]: suggestion
+      }))
+      toast.success("AI Audit Complete", {
+        description: `Found optimization opportunity for ${claim.patients?.first_name} ${claim.patients?.last_name}`
+      })
+    } else {
+      toast.info("Audit Complete", {
+        description: "No optimization opportunities found for this claim"
+      })
+    }
+
+    setAuditingClaimId(null)
+  }
+
+  // Format currency in Indian format
+  const formatINR = (amount: number): string => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0
+    }).format(amount)
+  }
+
+  // Calculate leakage
+  const calculateLeakage = (bill: number, rate: number): number => {
+    return bill > rate ? bill - rate : 0
+  }
+
+  // Get status badge
+  const getStatusBadge = (status: Claim['status']) => {
+    switch (status) {
+      case 'approved':
+        return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30"><CheckCircle className="size-3 mr-1" />Approved</Badge>
+      case 'denied':
+        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><XCircle className="size-3 mr-1" />Denied</Badge>
+      case 'under_review':
+        return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30"><Clock className="size-3 mr-1" />Under Review</Badge>
+      default:
+        return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30"><Clock className="size-3 mr-1" />Pending</Badge>
+    }
+  }
+
+  // Calculate total stats
+  const totalBilled = claims.reduce((sum, c) => sum + c.hospital_bill_amount, 0)
+  const totalKASP = claims.reduce((sum, c) => sum + (c.medical_packages?.kasp_rate_2026 || 0), 0)
+  const totalLeakage = claims.reduce((sum, c) => {
+    const rate = c.medical_packages?.kasp_rate_2026 || 0
+    return sum + (c.hospital_bill_amount > rate ? c.hospital_bill_amount - rate : 0)
+  }, 0)
 
   return (
     <DashboardLayout>
-      <ClaimsHeader />
-      <div className="p-4 lg:p-6">
-        <div className="grid gap-6 lg:grid-cols-5">
-          {/* Claims Queue - Left 40% */}
-          <div className="lg:col-span-2">
-            <ClaimsQueue 
-              claims={mockClaims}
-              selectedClaim={selectedClaim}
-              onSelectClaim={setSelectedClaim}
-            />
-          </div>
-          
-          {/* AI Analysis Panel - Right 60% */}
-          <div className="lg:col-span-3">
-            <AIAnalysisPanel 
-              claim={selectedClaim}
-              deidentifyPII={deidentifyPII}
-              onToggleDeidentify={setDeidentifyPII}
-            />
+      {/* Header */}
+      <header className="border-b border-border bg-card px-4 lg:px-6 py-4">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2 pl-12 md:pl-0">
+            <nav className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Home className="size-4" />
+              <ChevronRight className="size-3" />
+              <span>Dashboard</span>
+              <ChevronRight className="size-3" />
+              <span className="text-foreground">Revenue Analysis</span>
+            </nav>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-semibold text-foreground">Claims Revenue Analysis</h1>
+                <p className="text-sm text-muted-foreground mt-1">Compare hospital bills against KASP 2026 rates</p>
+              </div>
+              <Button onClick={fetchClaims} variant="outline" size="sm" className="gap-2">
+                <RefreshCw className="size-4" />
+                Refresh
+              </Button>
+            </div>
           </div>
         </div>
+      </header>
+
+      <div className="p-4 lg:p-6 space-y-6">
+        {/* Summary Cards */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="bg-card border-border">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <IndianRupee className="size-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Total Hospital Bills</p>
+                  <p className="text-xl font-semibold">{formatINR(totalBilled)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-border">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-emerald-500/10">
+                  <CheckCircle className="size-5 text-emerald-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Total KASP Rates</p>
+                  <p className="text-xl font-semibold">{formatINR(totalKASP)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-border border-red-500/30">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-red-500/10">
+                  <TrendingDown className="size-5 text-red-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Total Revenue Leakage</p>
+                  <p className="text-xl font-semibold text-red-400">{formatINR(totalLeakage)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Claims List */}
+        <Card className="bg-card border-border">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileSearch className="size-5" />
+              Claims with Revenue Comparison
+            </CardTitle>
+            <CardDescription>
+              {claims.length} claims from Hammersmith AI Clinic
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map(i => (
+                  <Skeleton key={i} className="h-48 w-full" />
+                ))}
+              </div>
+            ) : (
+              <ScrollArea className="h-[600px] pr-4">
+                <div className="space-y-4">
+                  {claims.map(claim => {
+                    const hospitalBill = claim.hospital_bill_amount
+                    const kaspRate = claim.medical_packages?.kasp_rate_2026 || 0
+                    const leakage = calculateLeakage(hospitalBill, kaspRate)
+                    const hasLeakage = leakage > 0
+                    const progressPercent = kaspRate > 0 ? Math.min((hospitalBill / kaspRate) * 100, 150) : 0
+                    const auditResult = auditResults[claim.id]
+                    const isAuditing = auditingClaimId === claim.id
+
+                    return (
+                      <Card 
+                        key={claim.id} 
+                        className={`bg-secondary/30 border-border ${hasLeakage ? 'border-red-500/30' : ''}`}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex flex-col lg:flex-row lg:items-start gap-4">
+                            {/* Patient & Procedure Info */}
+                            <div className="flex-1 space-y-3">
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <h3 className="font-semibold text-lg">
+                                    {claim.patients?.first_name} {claim.patients?.last_name}
+                                  </h3>
+                                  <p className="text-xs text-muted-foreground">
+                                    ABHA: {claim.patients?.abha_id}
+                                  </p>
+                                </div>
+                                {getStatusBadge(claim.status)}
+                              </div>
+
+                              <div className="p-3 rounded-lg bg-background/50">
+                                <p className="text-xs text-muted-foreground mb-1">Procedure</p>
+                                <p className="font-medium">{claim.medical_packages?.procedure_name}</p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Package Code: {claim.medical_packages?.package_code}
+                                </p>
+                              </div>
+
+                              {/* Revenue Comparison */}
+                              <div className="space-y-2">
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Hospital Bill</span>
+                                  <span className="font-semibold">{formatINR(hospitalBill)}</span>
+                                </div>
+                                <div className="relative">
+                                  <Progress 
+                                    value={Math.min(progressPercent, 100)} 
+                                    className={`h-3 ${hasLeakage ? '[&>div]:bg-red-500' : '[&>div]:bg-emerald-500'}`}
+                                  />
+                                  {progressPercent > 100 && (
+                                    <div 
+                                      className="absolute top-0 h-3 bg-red-500/50 rounded-r-full"
+                                      style={{ 
+                                        left: '66.67%', 
+                                        width: `${Math.min((progressPercent - 100) / 1.5, 33.33)}%` 
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">KASP 2026 Rate</span>
+                                  <span className="font-semibold text-emerald-400">{formatINR(kaspRate)}</span>
+                                </div>
+                              </div>
+
+                              {/* Leakage Alert */}
+                              {hasLeakage && (
+                                <div className="flex items-center gap-2 p-2 rounded-lg bg-red-500/10 border border-red-500/30">
+                                  <AlertTriangle className="size-4 text-red-400" />
+                                  <span className="text-sm font-medium text-red-400">
+                                    Revenue Leakage: {formatINR(leakage)}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* AI Audit Result */}
+                              {auditResult && (
+                                <div className="p-3 rounded-lg bg-primary/10 border border-primary/30">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Sparkles className="size-4 text-primary" />
+                                    <span className="text-sm font-semibold text-primary">AI Optimization Found</span>
+                                  </div>
+                                  <p className="text-sm text-card-foreground">{auditResult.suggestion}</p>
+                                  <p className="text-sm font-semibold text-emerald-400 mt-2">
+                                    Potential Revenue Increase: {formatINR(auditResult.potentialIncrease)}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex lg:flex-col gap-2 lg:w-40">
+                              <Button 
+                                onClick={() => runAIAudit(claim)}
+                                disabled={isAuditing || !!auditResult}
+                                className="flex-1 lg:flex-none gap-2"
+                                size="sm"
+                              >
+                                {isAuditing ? (
+                                  <>
+                                    <span className="size-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                                    Analyzing...
+                                  </>
+                                ) : auditResult ? (
+                                  <>
+                                    <CheckCircle className="size-4" />
+                                    Audited
+                                  </>
+                                ) : (
+                                  <>
+                                    <Sparkles className="size-4" />
+                                    Run AI Audit
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              </ScrollArea>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </DashboardLayout>
   )
