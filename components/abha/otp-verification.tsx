@@ -1,11 +1,13 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { ArrowLeft, Shield, RefreshCw, Lock, CheckCircle } from "lucide-react"
+import { ArrowLeft, Shield, RefreshCw, Lock, CheckCircle, Database } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
+import { createClient, isSupabaseConfigured } from "@/lib/supabase"
+import type { Patient } from "@/lib/supabase"
 
 interface OTPVerificationProps {
   identifier: string
@@ -18,7 +20,7 @@ export function OTPVerification({ identifier, transactionId, onVerified, onBack 
   const [otp, setOtp] = useState(["", "", "", "", "", ""])
   const [isLoading, setIsLoading] = useState(false)
   const [resendTimer, setResendTimer] = useState(30)
-  const [verificationStage, setVerificationStage] = useState<"otp" | "handshake" | "complete">("otp")
+  const [verificationStage, setVerificationStage] = useState<"otp" | "handshake" | "database" | "complete">("otp")
   const inputRefs = useRef<(HTMLInputElement | null)[]>([])
 
   useEffect(() => {
@@ -73,38 +75,90 @@ export function OTPVerification({ identifier, transactionId, onVerified, onBack 
     setIsLoading(true)
     setVerificationStage("otp")
 
-    // Stage 1: OTP Verification
-    await new Promise(resolve => setTimeout(resolve, 800))
-    
-    // Stage 2: Backend Handshake - Verify transaction ID
-    setVerificationStage("handshake")
-    toast.info("Secure Handshake", {
-      description: `Validating transaction ${transactionId.slice(0, 12)}...`
-    })
-    
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // Simulate backend handshake verification
-    const handshakeSuccess = simulateBackendHandshake(transactionId, otpValue)
-    
-    if (!handshakeSuccess) {
+    try {
+      // Stage 1: OTP Verification
+      await new Promise(resolve => setTimeout(resolve, 800))
+      
+      // Stage 2: Backend Handshake - Verify transaction ID
+      setVerificationStage("handshake")
+      toast.info("Secure Handshake", {
+        description: `Validating transaction ${transactionId.slice(0, 12)}...`
+      })
+      
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // Simulate backend handshake verification
+      const handshakeSuccess = simulateBackendHandshake(transactionId, otpValue)
+      
+      if (!handshakeSuccess) {
+        setIsLoading(false)
+        setVerificationStage("otp")
+        toast.error("Verification Failed", {
+          description: "Transaction validation failed. Please try again."
+        })
+        return
+      }
+
+      // Stage 3: Database Sync - Upsert patient record to Supabase
+      setVerificationStage("database")
+      
+      if (isSupabaseConfigured()) {
+        const supabase = createClient()
+        
+        // Generate patient data from the verified ABHA
+        const patientData: Patient = {
+          abha_id: generateAbhaId(identifier),
+          abha_address: generateAbhaAddress(identifier),
+          full_name: generatePatientName(identifier),
+          is_abha_verified: true,
+        }
+        
+        const { error } = await supabase
+          .from('patients')
+          .upsert(patientData, {
+            onConflict: 'abha_id',
+            ignoreDuplicates: false
+          })
+        
+        if (error) {
+          console.error("[v0] Supabase upsert error:", error)
+          toast.error("Database Sync Failed", {
+            description: error.message || "Could not save patient record. Please check your Supabase configuration."
+          })
+          setIsLoading(false)
+          setVerificationStage("otp")
+          return
+        }
+        
+        toast.success("Database Synced", {
+          description: "Patient record saved to Supabase successfully"
+        })
+      } else {
+        // If Supabase is not configured, show warning but continue
+        toast.warning("Database Not Connected", {
+          description: "Patient verified but not saved. Add Supabase env vars to enable persistence."
+        })
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+
+      // Stage 4: Complete
+      setVerificationStage("complete")
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      setIsLoading(false)
+      toast.success("Verification Successful", {
+        description: "Patient identity verified via Aadhaar-linked OTP with secure backend handshake"
+      })
+      onVerified(transactionId)
+      
+    } catch (error) {
+      console.error("[v0] Verification error:", error)
       setIsLoading(false)
       setVerificationStage("otp")
-      toast.error("Verification Failed", {
-        description: "Transaction validation failed. Please try again."
+      toast.error("Verification Error", {
+        description: error instanceof Error ? error.message : "An unexpected error occurred"
       })
-      return
     }
-
-    // Stage 3: Complete
-    setVerificationStage("complete")
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
-    setIsLoading(false)
-    toast.success("Verification Successful", {
-      description: "Patient identity verified via Aadhaar-linked OTP with secure backend handshake"
-    })
-    onVerified(transactionId)
   }
 
   // Simulate backend handshake verification
@@ -112,6 +166,23 @@ export function OTPVerification({ identifier, transactionId, onVerified, onBack 
     // In real implementation, this would call your backend API
     // which validates the transaction ID with ABDM servers
     return txnId.startsWith("ABDM-TXN-")
+  }
+
+  // Helper functions to generate patient data based on identifier type
+  const generateAbhaId = (id: string): string => {
+    if (id.replace(/-/g, "").length === 14) return id.replace(/-/g, "")
+    return `91${Date.now().toString().slice(-12)}`
+  }
+
+  const generateAbhaAddress = (id: string): string => {
+    if (id.includes("@")) return id
+    return `patient.${Date.now().toString().slice(-6)}@abdm`
+  }
+
+  const generatePatientName = (id: string): string => {
+    // In real implementation, this would come from ABDM API response
+    if (id.includes("@")) return id.split("@")[0].replace(/\./g, " ").replace(/\b\w/g, l => l.toUpperCase())
+    return "Verified Patient"
   }
 
   const handleResend = () => {
@@ -136,7 +207,7 @@ export function OTPVerification({ identifier, transactionId, onVerified, onBack 
           </Button>
           <div className="flex-1">
             <CardTitle className="flex items-center gap-2">
-              <Shield className="size-5 text-teal-500" />
+              <Shield className="size-5 text-emerald-500" />
               Aadhaar OTP Verification
             </CardTitle>
             <CardDescription>
@@ -147,10 +218,10 @@ export function OTPVerification({ identifier, transactionId, onVerified, onBack 
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Transaction ID Display */}
-        <div className="p-3 rounded-lg bg-teal-500/10 border border-teal-500/20">
+        <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
           <div className="flex items-center gap-2">
-            <Lock className="size-4 text-teal-500" />
-            <span className="text-xs text-teal-500 font-medium">Secure Transaction</span>
+            <Lock className="size-4 text-emerald-500" />
+            <span className="text-xs text-emerald-500 font-medium">Secure Transaction</span>
           </div>
           <p className="text-xs text-muted-foreground mt-1 font-mono">
             ID: {transactionId}
@@ -179,26 +250,35 @@ export function OTPVerification({ identifier, transactionId, onVerified, onBack 
         {/* Verification Progress */}
         {isLoading && (
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
               {verificationStage === "otp" && (
                 <>
-                  <span className="size-4 border-2 border-teal-500/30 border-t-teal-500 rounded-full animate-spin" />
+                  <span className="size-4 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
                   <span className="text-muted-foreground">Verifying OTP...</span>
                 </>
               )}
               {verificationStage === "handshake" && (
                 <>
-                  <CheckCircle className="size-4 text-teal-500" />
-                  <span className="text-teal-500">OTP Verified</span>
-                  <span className="mx-2">•</span>
-                  <span className="size-4 border-2 border-teal-500/30 border-t-teal-500 rounded-full animate-spin" />
+                  <CheckCircle className="size-4 text-emerald-500" />
+                  <span className="text-emerald-500">OTP Verified</span>
+                  <span className="mx-1">•</span>
+                  <span className="size-4 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
                   <span className="text-muted-foreground">Backend Handshake...</span>
+                </>
+              )}
+              {verificationStage === "database" && (
+                <>
+                  <CheckCircle className="size-4 text-emerald-500" />
+                  <span className="text-emerald-500">Handshake Complete</span>
+                  <span className="mx-1">•</span>
+                  <Database className="size-4 text-emerald-500 animate-pulse" />
+                  <span className="text-muted-foreground">Syncing to Database...</span>
                 </>
               )}
               {verificationStage === "complete" && (
                 <>
-                  <CheckCircle className="size-4 text-teal-500" />
-                  <span className="text-teal-500">Complete</span>
+                  <CheckCircle className="size-4 text-emerald-500" />
+                  <span className="text-emerald-500">Complete</span>
                 </>
               )}
             </div>
@@ -209,7 +289,7 @@ export function OTPVerification({ identifier, transactionId, onVerified, onBack 
           <Button 
             onClick={handleVerify}
             disabled={isLoading || otp.join("").length !== 6}
-            className="w-full max-w-xs gap-2 bg-teal-600 hover:bg-teal-700"
+            className="w-full max-w-xs gap-2 bg-emerald-600 hover:bg-emerald-700"
           >
             {isLoading ? (
               <>
@@ -230,7 +310,7 @@ export function OTPVerification({ identifier, transactionId, onVerified, onBack 
                 size="sm" 
                 onClick={handleResend}
                 disabled={isLoading}
-                className="gap-2 text-teal-500 hover:text-teal-400"
+                className="gap-2 text-emerald-500 hover:text-emerald-400"
               >
                 <RefreshCw className="size-4" />
                 Resend OTP

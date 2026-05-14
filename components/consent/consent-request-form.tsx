@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Send, FileText, Pill, Stethoscope, Syringe, User } from "lucide-react"
+import { Send, FileText, Pill, Stethoscope, Syringe, User, Database } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { toast } from "sonner"
+import { createClient, isSupabaseConfigured } from "@/lib/supabase"
 
 const recordTypes = [
   { id: "diagnostic", label: "Diagnostic Reports", icon: Stethoscope },
@@ -31,11 +32,11 @@ const purposes = [
 ]
 
 const durations = [
-  { value: "1day", label: "1 Day" },
-  { value: "3days", label: "3 Days" },
-  { value: "discharge", label: "Until Discharge" },
-  { value: "1week", label: "1 Week" },
-  { value: "1month", label: "1 Month" },
+  { value: "1day", label: "1 Day", days: 1 },
+  { value: "3days", label: "3 Days", days: 3 },
+  { value: "discharge", label: "Until Discharge", days: 30 },
+  { value: "1week", label: "1 Week", days: 7 },
+  { value: "1month", label: "1 Month", days: 30 },
 ]
 
 export function ConsentRequestForm() {
@@ -44,6 +45,7 @@ export function ConsentRequestForm() {
   const [purpose, setPurpose] = useState("")
   const [duration, setDuration] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
 
   const handleRecordToggle = (id: string) => {
     setSelectedRecords(prev => 
@@ -53,7 +55,15 @@ export function ConsentRequestForm() {
     )
   }
 
-  const handleSubmit = () => {
+  const calculateExpiryDate = (durationValue: string): string => {
+    const durationConfig = durations.find(d => d.value === durationValue)
+    const days = durationConfig?.days || 1
+    const expiryDate = new Date()
+    expiryDate.setDate(expiryDate.getDate() + days)
+    return expiryDate.toISOString()
+  }
+
+  const handleSubmit = async () => {
     if (!abhaAddress || selectedRecords.length === 0 || !purpose || !duration) {
       toast.error("Missing Information", {
         description: "Please fill in all required fields"
@@ -62,16 +72,75 @@ export function ConsentRequestForm() {
     }
 
     setIsSubmitting(true)
-    setTimeout(() => {
-      setIsSubmitting(false)
+
+    try {
+      // If Supabase is configured, save to database
+      if (isSupabaseConfigured()) {
+        setIsSyncing(true)
+        const supabase = createClient()
+        
+        // First, try to find the patient by ABHA address
+        const { data: patientData } = await supabase
+          .from('patients')
+          .select('id')
+          .eq('abha_address', abhaAddress)
+          .single()
+        
+        // Prepare consent log data
+        const consentLog = {
+          patient_id: patientData?.id || null,
+          abha_address: abhaAddress,
+          purpose: purpose,
+          record_types: selectedRecords,
+          expiry_date: calculateExpiryDate(duration),
+          status: 'pending' as const,
+        }
+        
+        const { error } = await supabase
+          .from('abdm_consent_logs')
+          .insert(consentLog)
+        
+        setIsSyncing(false)
+        
+        if (error) {
+          console.error("[v0] Consent log insert error:", error)
+          toast.error("Database Error", {
+            description: error.message || "Could not save consent request. Check Supabase configuration."
+          })
+          setIsSubmitting(false)
+          return
+        }
+        
+        toast.success("Consent Request Logged", {
+          description: "Request saved to database and sent to patient's ABHA App"
+        })
+      } else {
+        // Simulate API call if Supabase not configured
+        await new Promise(resolve => setTimeout(resolve, 1500))
+        toast.warning("Database Not Connected", {
+          description: "Request sent but not persisted. Add Supabase env vars for persistence."
+        })
+      }
+      
       toast.success("Consent Request Sent", {
         description: "Patient will receive notification on their ABHA App"
       })
+      
+      // Reset form
       setAbhaAddress("")
       setSelectedRecords([])
       setPurpose("")
       setDuration("")
-    }, 1500)
+      
+    } catch (error) {
+      console.error("[v0] Consent submission error:", error)
+      toast.error("Submission Failed", {
+        description: error instanceof Error ? error.message : "An unexpected error occurred"
+      })
+    } finally {
+      setIsSubmitting(false)
+      setIsSyncing(false)
+    }
   }
 
   return (
@@ -167,8 +236,12 @@ export function ConsentRequestForm() {
         >
           {isSubmitting ? (
             <>
-              <span className="size-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-              Sending Request...
+              {isSyncing ? (
+                <Database className="size-4 animate-pulse" />
+              ) : (
+                <span className="size-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+              )}
+              {isSyncing ? "Saving to Database..." : "Sending Request..."}
             </>
           ) : (
             <>
@@ -177,6 +250,17 @@ export function ConsentRequestForm() {
             </>
           )}
         </Button>
+
+        {/* Database Status Indicator */}
+        <div className={`flex items-center justify-center gap-2 text-xs ${isSupabaseConfigured() ? 'text-emerald-500' : 'text-muted-foreground'}`}>
+          <Database className="size-3" />
+          <span>
+            {isSupabaseConfigured() 
+              ? "Connected to Supabase" 
+              : "Database not configured"
+            }
+          </span>
+        </div>
       </CardContent>
     </Card>
   )
