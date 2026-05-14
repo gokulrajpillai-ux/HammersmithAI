@@ -157,6 +157,20 @@ html.light {
   animation: pulse-red 2s ease-in-out infinite;
 }
 
+/* Green pulse animation for revenue opportunities */
+@keyframes pulse-green {
+  0%, 100% {
+    box-shadow: 0 0 0 0 oklch(0.60 0.16 155 / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px oklch(0.60 0.16 155 / 0);
+  }
+}
+
+.animate-pulse-green {
+  animation: pulse-green 2s ease-in-out infinite;
+}
+
 /* Confetti celebration animation */
 @keyframes confetti-fall {
   0% {

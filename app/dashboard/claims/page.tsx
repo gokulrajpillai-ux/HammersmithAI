@@ -141,7 +141,7 @@ export default function ClaimsWorkspacePage() {
   const [claims, setClaims] = useState<Claim[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadingClaims, setLoadingClaims] = useState<string[]>([]) // Track which claims are being audited
-  const [auditResults, setAuditResults] = useState<Record<string, { suggestion: string; potentialIncrease: number; suggestedCode?: string }>>({})
+  const [auditResults, setAuditResults] = useState<Record<string, { suggestion: string; potentialIncrease: number; suggestedCode?: string; suggestedRate?: number }>>({})
 
   // Fetch claims from Supabase
   const fetchClaims = async () => {
@@ -214,25 +214,39 @@ export default function ClaimsWorkspacePage() {
   // Run AI Audit for a specific claim using Edge Function
   const runAIAudit = async (claim: Claim) => {
     const packageCode = claim.medical_packages?.package_code
-    const clinicalNotes = claim.clinical_notes
+    const kaspRate = claim.medical_packages?.kasp_rate_2026 || 0
     if (!packageCode) return
 
     // Add claim to loading state
     setLoadingClaims(prev => [...prev, claim.id])
 
     try {
-      let suggestion: { suggestion: string; potentialIncrease: number; suggestedCode?: string } | null = null
+      let suggestion: { 
+        suggestion: string
+        potentialIncrease: number
+        suggestedCode?: string
+        suggestedRate?: number 
+      } | null = null
 
       if (isSupabaseConfigured()) {
         const supabase = createClient()
         
-        // Call the analyze-claim Edge Function
+        // De-identify clinical notes before sending to Edge Function
+        const clinicalSummaryDeidentified = deidentifyClinicalNotes(
+          claim.clinical_notes || '',
+          claim.patients?.first_name,
+          claim.patients?.last_name,
+          claim.patients?.abha_id
+        )
+        
+        // Call the analyze-claim Edge Function with de-identified data
         const { data, error } = await supabase.functions.invoke('analyze-claim', {
           body: { 
-            clinical_notes: clinicalNotes,
+            clinical_summary_deidentified: clinicalSummaryDeidentified,
             org_id: DEFAULT_ORG_ID,
             claim_id: claim.id,
-            current_package_code: packageCode
+            current_package_code: packageCode,
+            current_kasp_rate: kaspRate
           }
         })
 
@@ -241,29 +255,39 @@ export default function ClaimsWorkspacePage() {
         }
 
         if (data?.suggested_package_code && data?.justification) {
+          const suggestedRate = data.suggested_kasp_rate || kaspRate
+          const revenueOpportunity = suggestedRate - kaspRate
+
           suggestion = {
             suggestion: data.justification,
-            potentialIncrease: data.potential_increase || 0,
-            suggestedCode: data.suggested_package_code
+            potentialIncrease: revenueOpportunity > 0 ? revenueOpportunity : (data.potential_increase || 0),
+            suggestedCode: data.suggested_package_code,
+            suggestedRate: suggestedRate
           }
 
-          // Update the claims table in Supabase with AI results
+          // Update the claims table in Supabase with AI results and set status to AI-AUDITED
           const { error: updateError } = await supabase
             .from('claims')
             .update({
+              status: 'AI-AUDITED',
               ai_suggested_code: data.suggested_package_code,
               ai_justification: data.justification,
-              ai_potential_increase: data.potential_increase,
+              ai_potential_increase: suggestion.potentialIncrease,
+              ai_suggested_rate: suggestedRate,
               ai_audited_at: new Date().toISOString()
             })
             .eq('id', claim.id)
             .eq('org_id', DEFAULT_ORG_ID)
 
           if (updateError) {
-            console.error("[v0] Failed to save AI results:", updateError)
             toast.warning("Audit complete but save failed", {
               description: "AI results could not be saved to database"
             })
+          } else {
+            // Update local state to reflect new status
+            setClaims(prev => prev.map(c => 
+              c.id === claim.id ? { ...c, status: 'AI-AUDITED' as any } : c
+            ))
           }
         }
       } else {
@@ -271,7 +295,11 @@ export default function ClaimsWorkspacePage() {
         await new Promise(resolve => setTimeout(resolve, 2500))
         const mockSuggestion = aiSuggestions[packageCode]
         if (mockSuggestion) {
-          suggestion = { ...mockSuggestion, suggestedCode: packageCode.replace('A', 'B') }
+          suggestion = { 
+            ...mockSuggestion, 
+            suggestedCode: packageCode.replace('A', 'B'),
+            suggestedRate: kaspRate + mockSuggestion.potentialIncrease
+          }
         }
       }
 
@@ -284,14 +312,17 @@ export default function ClaimsWorkspacePage() {
         // Show confetti effect for big optimizations (> 5000)
         if (suggestion.potentialIncrease > 5000) {
           toast.success("Major Optimization Found!", {
-            description: `Suggested Code: ${suggestion.suggestedCode} - Potential increase: ${formatINR(suggestion.potentialIncrease)}`,
+            description: `Suggested Code: ${suggestion.suggestedCode} - Revenue Opportunity: ${formatINR(suggestion.potentialIncrease)}`,
             duration: 6000
           })
-          // Trigger confetti if available (we'll add a simple celebration)
           triggerCelebration()
+        } else if (suggestion.potentialIncrease > 0) {
+          toast.success("AI Audit Complete", {
+            description: `Suggested Code: ${suggestion.suggestedCode} for ${claim.patients?.first_name} ${claim.patients?.last_name}`
+          })
         } else {
           toast.success("AI Audit Complete", {
-            description: `Found optimization for ${claim.patients?.first_name} ${claim.patients?.last_name}`
+            description: "Claim coding verified as optimal"
           })
         }
       } else {
@@ -300,7 +331,6 @@ export default function ClaimsWorkspacePage() {
         })
       }
     } catch (err) {
-      console.error("[v0] AI Audit error:", err)
       toast.error("AI Audit Failed", {
         description: err instanceof Error ? err.message : "Edge Function timed out or encountered an error. Please try again."
       })
@@ -308,6 +338,23 @@ export default function ClaimsWorkspacePage() {
       // Remove claim from loading state
       setLoadingClaims(prev => prev.filter(id => id !== claim.id))
     }
+  }
+
+  // De-identify clinical notes by masking PII
+  const deidentifyClinicalNotes = (
+    notes: string, 
+    firstName?: string, 
+    lastName?: string, 
+    abhaId?: string
+  ): string => {
+    let deidentified = notes
+    if (firstName) deidentified = deidentified.replace(new RegExp(firstName, 'gi'), '[PATIENT]')
+    if (lastName) deidentified = deidentified.replace(new RegExp(lastName, 'gi'), '[PATIENT]')
+    if (abhaId) deidentified = deidentified.replace(new RegExp(abhaId.replace(/-/g, '[-\\s]?'), 'gi'), '[ABHA-REDACTED]')
+    // Also mask common PII patterns
+    deidentified = deidentified.replace(/\b\d{10}\b/g, '[PHONE-REDACTED]')
+    deidentified = deidentified.replace(/\b\d{12}\b/g, '[AADHAAR-REDACTED]')
+    return deidentified
   }
 
   // Simple celebration effect for big optimizations
@@ -349,7 +396,7 @@ export default function ClaimsWorkspacePage() {
   }
 
   // Get status badge
-  const getStatusBadge = (status: Claim['status']) => {
+  const getStatusBadge = (status: Claim['status'] | 'AI-AUDITED') => {
     switch (status) {
       case 'approved':
         return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30"><CheckCircle className="size-3 mr-1" />Approved</Badge>
@@ -357,6 +404,8 @@ export default function ClaimsWorkspacePage() {
         return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><XCircle className="size-3 mr-1" />Denied</Badge>
       case 'under_review':
         return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30"><Clock className="size-3 mr-1" />Under Review</Badge>
+      case 'AI-AUDITED':
+        return <Badge className="bg-primary/20 text-primary border-primary/30"><Sparkles className="size-3 mr-1" />AI-Audited</Badge>
       default:
         return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30"><Clock className="size-3 mr-1" />Pending</Badge>
     }
@@ -527,27 +576,75 @@ export default function ClaimsWorkspacePage() {
                                 </div>
                               </div>
 
-                              {/* Leakage Alert */}
-                              {hasLeakage && (
-                                <div className="flex items-center gap-2 p-2 rounded-lg bg-red-500/10 border border-red-500/30">
+                              {/* AI Insights Section */}
+                              {auditResult && (
+                                <div className="p-4 rounded-lg bg-gradient-to-br from-primary/10 to-accent/10 border border-primary/30">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                      <Sparkles className="size-4 text-primary" />
+                                      <span className="text-sm font-semibold text-primary">AI Insights</span>
+                                    </div>
+                                    {auditResult.suggestedCode && (
+                                      <Badge className="bg-primary text-primary-foreground">
+                                        {auditResult.suggestedCode}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  
+                                  {/* Justification */}
+                                  <p className="text-sm text-card-foreground mb-3">{auditResult.suggestion}</p>
+                                  
+                                  {/* Revenue Opportunity with Pulse Indicator */}
+                                  {auditResult.potentialIncrease > 0 ? (
+                                    <div className={`p-3 rounded-lg border ${
+                                      auditResult.potentialIncrease > 5000 
+                                        ? 'bg-emerald-500/10 border-emerald-500/30 animate-pulse-green' 
+                                        : 'bg-emerald-500/5 border-emerald-500/20'
+                                    }`}>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-xs text-muted-foreground">Revenue Opportunity</span>
+                                        <div className="flex items-center gap-2">
+                                          <span className={`text-lg font-bold ${
+                                            auditResult.potentialIncrease > 5000 ? 'text-emerald-400' : 'text-emerald-500'
+                                          }`}>
+                                            +{formatINR(auditResult.potentialIncrease)}
+                                          </span>
+                                          {auditResult.potentialIncrease > 5000 && (
+                                            <span className="relative flex size-3">
+                                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                              <span className="relative inline-flex rounded-full size-3 bg-emerald-500"></span>
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      {auditResult.suggestedRate && (
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                          New KASP Rate: {formatINR(auditResult.suggestedRate)}
+                                        </p>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                                      <div className="flex items-center gap-2">
+                                        <CheckCircle className="size-4 text-blue-400" />
+                                        <span className="text-sm text-blue-400">Coding Verified as Optimal</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Revenue Leakage Alert with Pulse */}
+                              {hasLeakage && !auditResult && (
+                                <div className="flex items-center gap-2 p-2 rounded-lg bg-red-500/10 border border-red-500/30 animate-pulse-red">
                                   <AlertTriangle className="size-4 text-red-400" />
                                   <span className="text-sm font-medium text-red-400">
                                     Revenue Leakage: {formatINR(leakage)}
                                   </span>
-                                </div>
-                              )}
-
-                              {/* AI Audit Result */}
-                              {auditResult && (
-                                <div className="p-3 rounded-lg bg-primary/10 border border-primary/30">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <Sparkles className="size-4 text-primary" />
-                                    <span className="text-sm font-semibold text-primary">AI Optimization Found</span>
-                                  </div>
-                                  <p className="text-sm text-card-foreground">{auditResult.suggestion}</p>
-                                  <p className="text-sm font-semibold text-emerald-400 mt-2">
-                                    Potential Revenue Increase: {formatINR(auditResult.potentialIncrease)}
-                                  </p>
+                                  <span className="relative flex size-2 ml-auto">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full size-2 bg-red-500"></span>
+                                  </span>
                                 </div>
                               )}
                             </div>
