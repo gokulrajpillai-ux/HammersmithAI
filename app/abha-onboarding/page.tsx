@@ -1,6 +1,6 @@
 "use client"
 
-import { Sidebar } from "@/components/dashboard/sidebar"
+import { DashboardLayout } from "@/components/dashboard/dashboard-layout"
 import { ABHAHeader } from "@/components/abha/header"
 import { ABHASearch } from "@/components/abha/abha-search"
 import { OTPVerification } from "@/components/abha/otp-verification"
@@ -57,43 +57,40 @@ export default function ABHAOnboardingPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <Sidebar />
-      <main className="flex-1 md:ml-64">
-        <ABHAHeader />
-        <div className="p-4 lg:p-6">
-          <div className="grid gap-6 lg:grid-cols-3">
-            {/* Main Content - Left 2/3 */}
-            <div className="lg:col-span-2 space-y-6">
-              {step === "search" && (
-                <ABHASearch onSubmit={handleSearchSubmit} />
-              )}
-              {step === "otp" && transactionId && (
-                <OTPVerification 
-                  identifier={searchValue}
-                  transactionId={transactionId}
-                  onVerified={handleOTPVerified}
-                  onBack={() => setStep("search")}
-                />
-              )}
-              {step === "verified" && verifiedPatient && (
-                <DigitalHealthCard 
-                  patient={verifiedPatient} 
-                  onReset={handleReset}
-                />
-              )}
-            </div>
-            
-            {/* Sidebar - Right 1/3 */}
-            <div className="space-y-6">
-              <RecentPatients onSelect={(patient) => {
-                setVerifiedPatient(patient)
-                setStep("verified")
-              }} />
-            </div>
+    <DashboardLayout>
+      <ABHAHeader />
+      <div className="p-4 lg:p-6">
+        <div className="grid gap-6 lg:grid-cols-3">
+          {/* Main Content - Left 2/3 */}
+          <div className="lg:col-span-2 space-y-6">
+            {step === "search" && (
+              <ABHASearch onSubmit={handleSearchSubmit} />
+            )}
+            {step === "otp" && transactionId && (
+              <OTPVerification 
+                identifier={searchValue}
+                transactionId={transactionId}
+                onVerified={handleOTPVerified}
+                onBack={() => setStep("search")}
+              />
+            )}
+            {step === "verified" && verifiedPatient && (
+              <DigitalHealthCard 
+                patient={verifiedPatient} 
+                onReset={handleReset}
+              />
+            )}
+          </div>
+          
+          {/* Sidebar - Right 1/3 */}
+          <div className="space-y-6">
+            <RecentPatients onSelect={(patient) => {
+              setVerifiedPatient(patient)
+              setStep("verified")
+            }} />
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </DashboardLayout>
   )
 }

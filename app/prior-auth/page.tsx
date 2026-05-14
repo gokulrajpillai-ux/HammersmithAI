@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Sidebar } from "@/components/dashboard/sidebar"
+import { DashboardLayout } from "@/components/dashboard/dashboard-layout"
 import { PriorAuthHeader } from "@/components/prior-auth/header"
 import { AuthQueue } from "@/components/prior-auth/auth-queue"
 import { AuthWorkspace } from "@/components/prior-auth/auth-workspace"
@@ -115,28 +115,25 @@ export default function PriorAuthPage() {
   const [selectedRequest, setSelectedRequest] = useState<AuthRequest | null>(null)
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <Sidebar />
-      <div className="flex-1 md:ml-64">
-        <PriorAuthHeader />
-        <main className="p-4 md:p-6">
-          <div className="flex flex-col lg:flex-row gap-6">
-            {/* Left Panel - Auth Queue */}
-            <div className="w-full lg:w-[40%]">
-              <AuthQueue 
-                requests={mockRequests} 
-                selectedId={selectedRequest?.id}
-                onSelect={setSelectedRequest}
-              />
-            </div>
-            
-            {/* Right Panel - Workspace */}
-            <div className="w-full lg:w-[60%]">
-              <AuthWorkspace request={selectedRequest} />
-            </div>
+    <DashboardLayout>
+      <PriorAuthHeader />
+      <main className="p-4 md:p-6">
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Left Panel - Auth Queue */}
+          <div className="w-full lg:w-[40%]">
+            <AuthQueue 
+              requests={mockRequests} 
+              selectedId={selectedRequest?.id}
+              onSelect={setSelectedRequest}
+            />
           </div>
-        </main>
-      </div>
-    </div>
+          
+          {/* Right Panel - Workspace */}
+          <div className="w-full lg:w-[60%]">
+            <AuthWorkspace request={selectedRequest} />
+          </div>
+        </div>
+      </main>
+    </DashboardLayout>
   )
 }

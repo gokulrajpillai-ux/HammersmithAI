@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Sidebar } from "@/components/dashboard/sidebar"
+import { DashboardLayout } from "@/components/dashboard/dashboard-layout"
 import { PayerHeader } from "@/components/payer-claims/header"
 import { PayerSelector } from "@/components/payer-claims/payer-selector"
 import { PackageRateChecker } from "@/components/payer-claims/package-rate-checker"
@@ -23,31 +23,28 @@ export default function PayerClaimsPage() {
   })
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <Sidebar />
-      <main className="flex-1 md:ml-64">
-        <PayerHeader selectedPayer={selectedPayer} />
-        <div className="p-4 lg:p-6">
-          <div className="grid gap-6 lg:grid-cols-12">
-            {/* Sidebar - Payer Selection */}
-            <div className="lg:col-span-3">
-              <PayerSelector 
-                selectedPayer={selectedPayer} 
-                onSelect={setSelectedPayer} 
-              />
+    <DashboardLayout>
+      <PayerHeader selectedPayer={selectedPayer} />
+      <div className="p-4 lg:p-6">
+        <div className="grid gap-6 lg:grid-cols-12">
+          {/* Sidebar - Payer Selection */}
+          <div className="lg:col-span-3">
+            <PayerSelector 
+              selectedPayer={selectedPayer} 
+              onSelect={setSelectedPayer} 
+            />
+          </div>
+          
+          {/* Main Content */}
+          <div className="lg:col-span-9 space-y-6">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <PackageRateChecker payerType={selectedPayer.type} />
+              <TPAQueryResolver payerName={selectedPayer.name} />
             </div>
-            
-            {/* Main Content */}
-            <div className="lg:col-span-9 space-y-6">
-              <div className="grid gap-6 lg:grid-cols-2">
-                <PackageRateChecker payerType={selectedPayer.type} />
-                <TPAQueryResolver payerName={selectedPayer.name} />
-              </div>
-              <ARDaysTable />
-            </div>
+            <ARDaysTable />
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </DashboardLayout>
   )
 }

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Sidebar } from "@/components/dashboard/sidebar"
+import { DashboardLayout } from "@/components/dashboard/dashboard-layout"
 import { ClaimsHeader } from "@/components/claims-workspace/header"
 import { ClaimsQueue } from "@/components/claims-workspace/claims-queue"
 import { AIAnalysisPanel } from "@/components/claims-workspace/ai-analysis-panel"
@@ -75,32 +75,29 @@ export default function ClaimsWorkspacePage() {
   const [deidentifyPII, setDeidentifyPII] = useState(false)
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <Sidebar />
-      <main className="flex-1 md:ml-64">
-        <ClaimsHeader />
-        <div className="p-4 lg:p-6">
-          <div className="grid gap-6 lg:grid-cols-5">
-            {/* Claims Queue - Left 40% */}
-            <div className="lg:col-span-2">
-              <ClaimsQueue 
-                claims={mockClaims}
-                selectedClaim={selectedClaim}
-                onSelectClaim={setSelectedClaim}
-              />
-            </div>
-            
-            {/* AI Analysis Panel - Right 60% */}
-            <div className="lg:col-span-3">
-              <AIAnalysisPanel 
-                claim={selectedClaim}
-                deidentifyPII={deidentifyPII}
-                onToggleDeidentify={setDeidentifyPII}
-              />
-            </div>
+    <DashboardLayout>
+      <ClaimsHeader />
+      <div className="p-4 lg:p-6">
+        <div className="grid gap-6 lg:grid-cols-5">
+          {/* Claims Queue - Left 40% */}
+          <div className="lg:col-span-2">
+            <ClaimsQueue 
+              claims={mockClaims}
+              selectedClaim={selectedClaim}
+              onSelectClaim={setSelectedClaim}
+            />
+          </div>
+          
+          {/* AI Analysis Panel - Right 60% */}
+          <div className="lg:col-span-3">
+            <AIAnalysisPanel 
+              claim={selectedClaim}
+              deidentifyPII={deidentifyPII}
+              onToggleDeidentify={setDeidentifyPII}
+            />
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </DashboardLayout>
   )
 }

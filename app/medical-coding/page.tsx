@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Sidebar } from "@/components/dashboard/sidebar"
+import { DashboardLayout } from "@/components/dashboard/dashboard-layout"
 import { CodingHeader } from "@/components/medical-coding/header"
 import { DocumentViewer } from "@/components/medical-coding/document-viewer"
 import { CodingSuggestions } from "@/components/medical-coding/coding-suggestions"
@@ -102,9 +102,8 @@ export default function MedicalCodingPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden">
+    <DashboardLayout>
+      <div className="flex-1 flex flex-col overflow-hidden">
         <CodingHeader pendingCount={pendingCount} confirmedCount={confirmedCodes.length} />
         
         <div className="flex-1 flex flex-col lg:flex-row gap-4 p-4 lg:p-6 overflow-hidden">
@@ -135,7 +134,7 @@ export default function MedicalCodingPage() {
             />
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </DashboardLayout>
   )
 }

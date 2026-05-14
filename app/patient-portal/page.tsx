@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Sidebar } from "@/components/dashboard/sidebar"
+import { DashboardLayout } from "@/components/dashboard/dashboard-layout"
 import { PatientHeader } from "@/components/patient-portal/header"
 import { BalanceCard } from "@/components/patient-portal/balance-card"
 import { PropensityScore } from "@/components/patient-portal/propensity-score"
@@ -100,9 +100,8 @@ export default function PatientPortalPage() {
   const [isStaffView, setIsStaffView] = useState(true)
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden">
+    <DashboardLayout>
+      <div className="flex-1 flex flex-col overflow-hidden">
         <PatientHeader 
           patient={patientData} 
           isStaffView={isStaffView}
@@ -133,7 +132,7 @@ export default function PatientPortalPage() {
 
         {/* AI Chat */}
         <AIChat />
-      </main>
-    </div>
+      </div>
+    </DashboardLayout>
   )
 }
