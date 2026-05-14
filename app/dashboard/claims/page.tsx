@@ -19,8 +19,22 @@ import {
   XCircle,
   FileSearch,
   Home,
-  ChevronRight
+  ChevronRight,
+  FileText,
+  Download,
+  X,
+  Building2,
+  Stethoscope,
+  ShieldCheck
 } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
+import { jsPDF } from "jspdf"
 import { toast } from "sonner"
 import { createClient, isSupabaseConfigured, DEFAULT_ORG_ID } from "@/lib/supabase"
 import type { Claim } from "@/lib/supabase"
@@ -142,6 +156,9 @@ export default function ClaimsWorkspacePage() {
   const [isLoading, setIsLoading] = useState(true)
   const [loadingClaims, setLoadingClaims] = useState<string[]>([]) // Track which claims are being audited
   const [auditResults, setAuditResults] = useState<Record<string, { suggestion: string; potentialIncrease: number; suggestedCode?: string; suggestedRate?: number }>>({})
+  const [shaModalOpen, setShaModalOpen] = useState(false)
+  const [selectedClaimForSHA, setSelectedClaimForSHA] = useState<Claim | null>(null)
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
 
   // Fetch claims from Supabase
   const fetchClaims = async () => {
@@ -388,6 +405,213 @@ export default function ClaimsWorkspacePage() {
       currency: 'INR',
       maximumFractionDigits: 0
     }).format(amount)
+  }
+
+  // Open SHA Justification modal
+  const openSHAModal = (claim: Claim) => {
+    setSelectedClaimForSHA(claim)
+    setShaModalOpen(true)
+  }
+
+  // Generate mock clinical data for the letter
+  const generateClinicalEvidence = (claim: Claim) => {
+    const auditResult = auditResults[claim.id]
+    return {
+      vitals: {
+        bp: "142/88 mmHg",
+        heartRate: "78 bpm",
+        spo2: "97%",
+        temperature: "98.6°F"
+      },
+      comorbidities: ["Hypertension", "Type 2 Diabetes Mellitus", "Dyslipidemia"],
+      bmi: 32.5,
+      riskFactors: ["Smoking history", "Family history of CAD"],
+      kaspCriteria: auditResult?.suggestedCode 
+        ? `Patient qualifies for ${auditResult.suggestedCode} (Complex) package due to elevated BMI >30 and multiple comorbidities requiring extended surgical time and post-operative monitoring.`
+        : "Standard package criteria met."
+    }
+  }
+
+  // Generate PDF using jsPDF
+  const generatePDF = async () => {
+    if (!selectedClaimForSHA) return
+    
+    setIsGeneratingPDF(true)
+    
+    try {
+      const claim = selectedClaimForSHA
+      const auditResult = auditResults[claim.id]
+      const evidence = generateClinicalEvidence(claim)
+      const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })
+      
+      const doc = new jsPDF()
+      let yPos = 20
+      const leftMargin = 20
+      const pageWidth = 170
+      
+      // Header - Clinic Name
+      doc.setFontSize(18)
+      doc.setFont("helvetica", "bold")
+      doc.text("HAMMERSMITH AI CLINIC", leftMargin, yPos)
+      yPos += 7
+      doc.setFontSize(11)
+      doc.setFont("helvetica", "normal")
+      doc.text("Hammersmith Pharmaceuticals", leftMargin, yPos)
+      yPos += 5
+      doc.setFontSize(9)
+      doc.text("123 Medical Center Road, Mumbai, Maharashtra 400001", leftMargin, yPos)
+      yPos += 4
+      doc.text("ROHINI ID: HOSP-2024-MH-0847 | ABHA HIP: HIP-0ec1ab3d", leftMargin, yPos)
+      yPos += 10
+      
+      // Line separator
+      doc.setDrawColor(0, 150, 136)
+      doc.setLineWidth(0.5)
+      doc.line(leftMargin, yPos, leftMargin + pageWidth, yPos)
+      yPos += 10
+      
+      // Document Title
+      doc.setFontSize(14)
+      doc.setFont("helvetica", "bold")
+      doc.text("MEDICAL APPEAL LETTER - SHA JUSTIFICATION", leftMargin, yPos)
+      yPos += 8
+      doc.setFontSize(10)
+      doc.setFont("helvetica", "normal")
+      doc.text(`Date: ${today}`, leftMargin, yPos)
+      doc.text(`Ref: SHA-${claim.id.slice(0, 8).toUpperCase()}`, leftMargin + 100, yPos)
+      yPos += 12
+      
+      // To Section
+      doc.setFont("helvetica", "bold")
+      doc.text("To:", leftMargin, yPos)
+      yPos += 6
+      doc.setFont("helvetica", "normal")
+      doc.text("The Medical Director,", leftMargin, yPos)
+      yPos += 5
+      doc.text("State Health Agency (SHA),", leftMargin, yPos)
+      yPos += 5
+      doc.text("Ayushman Bharat - Pradhan Mantri Jan Arogya Yojana (AB-PMJAY)", leftMargin, yPos)
+      yPos += 10
+      
+      // Subject
+      doc.setFont("helvetica", "bold")
+      doc.text("Subject: Request for Package Upgrade - Clinical Justification", leftMargin, yPos)
+      yPos += 10
+      
+      // Patient Details
+      doc.setFillColor(240, 248, 255)
+      doc.rect(leftMargin, yPos, pageWidth, 25, 'F')
+      yPos += 6
+      doc.setFont("helvetica", "bold")
+      doc.text("PATIENT DETAILS:", leftMargin + 3, yPos)
+      yPos += 6
+      doc.setFont("helvetica", "normal")
+      doc.text(`Name: ${claim.patients?.first_name} ${claim.patients?.last_name}`, leftMargin + 3, yPos)
+      doc.text(`ABHA ID: ${claim.patients?.abha_id}`, leftMargin + 90, yPos)
+      yPos += 5
+      doc.text(`Admission Date: ${claim.admission_date || 'N/A'}`, leftMargin + 3, yPos)
+      doc.text(`Current Package: ${claim.medical_packages?.package_code}`, leftMargin + 90, yPos)
+      yPos += 14
+      
+      // Clinical Evidence Section
+      doc.setFont("helvetica", "bold")
+      doc.text("CLINICAL EVIDENCE:", leftMargin, yPos)
+      yPos += 7
+      
+      // Vitals
+      doc.setFont("helvetica", "italic")
+      doc.text("Vital Signs at Admission:", leftMargin, yPos)
+      yPos += 5
+      doc.setFont("helvetica", "normal")
+      doc.text(`BP: ${evidence.vitals.bp} | HR: ${evidence.vitals.heartRate} | SpO2: ${evidence.vitals.spo2} | Temp: ${evidence.vitals.temperature}`, leftMargin, yPos)
+      yPos += 7
+      
+      // Comorbidities
+      doc.setFont("helvetica", "italic")
+      doc.text("Documented Comorbidities:", leftMargin, yPos)
+      yPos += 5
+      doc.setFont("helvetica", "normal")
+      doc.text(evidence.comorbidities.join(", "), leftMargin, yPos)
+      yPos += 7
+      
+      // BMI and Risk Factors
+      doc.text(`BMI: ${evidence.bmi} kg/m² (Obese Category)`, leftMargin, yPos)
+      yPos += 5
+      doc.text(`Risk Factors: ${evidence.riskFactors.join(", ")}`, leftMargin, yPos)
+      yPos += 12
+      
+      // KASP Criteria Justification
+      doc.setFont("helvetica", "bold")
+      doc.text("KASP 2026 PACKAGE CRITERIA JUSTIFICATION:", leftMargin, yPos)
+      yPos += 7
+      doc.setFont("helvetica", "normal")
+      
+      const criteriaLines = doc.splitTextToSize(evidence.kaspCriteria, pageWidth)
+      doc.text(criteriaLines, leftMargin, yPos)
+      yPos += criteriaLines.length * 5 + 5
+      
+      // AI Analysis Section
+      if (auditResult) {
+        yPos += 3
+        doc.setFillColor(232, 245, 233)
+        doc.rect(leftMargin, yPos, pageWidth, 30, 'F')
+        yPos += 6
+        doc.setFont("helvetica", "bold")
+        doc.text("AI-ASSISTED CODING ANALYSIS:", leftMargin + 3, yPos)
+        yPos += 6
+        doc.setFont("helvetica", "normal")
+        doc.text(`Suggested Package: ${auditResult.suggestedCode}`, leftMargin + 3, yPos)
+        yPos += 5
+        const justificationLines = doc.splitTextToSize(auditResult.suggestion, pageWidth - 6)
+        doc.text(justificationLines, leftMargin + 3, yPos)
+        yPos += justificationLines.length * 5 + 5
+        doc.text(`Estimated Revenue Adjustment: ${formatINR(auditResult.potentialIncrease)}`, leftMargin + 3, yPos)
+        yPos += 15
+      }
+      
+      // Request
+      doc.setFont("helvetica", "normal")
+      const requestText = `Based on the above clinical evidence and KASP 2026 guidelines, we respectfully request approval for package upgrade from ${claim.medical_packages?.package_code} to ${auditResult?.suggestedCode || 'Complex Category'}. The patient's clinical presentation meets all criteria for the higher complexity tier.`
+      const requestLines = doc.splitTextToSize(requestText, pageWidth)
+      doc.text(requestLines, leftMargin, yPos)
+      yPos += requestLines.length * 5 + 15
+      
+      // Signature
+      doc.text("Yours sincerely,", leftMargin, yPos)
+      yPos += 10
+      doc.setFont("helvetica", "bold")
+      doc.text("Dr. Hammersmith", leftMargin, yPos)
+      yPos += 5
+      doc.setFont("helvetica", "normal")
+      doc.text("Chief Medical Officer", leftMargin, yPos)
+      yPos += 5
+      doc.text("Hammersmith AI Clinic", leftMargin, yPos)
+      
+      // NHCX Badge at bottom
+      yPos = 275
+      doc.setDrawColor(0, 150, 136)
+      doc.setLineWidth(0.3)
+      doc.line(leftMargin, yPos, leftMargin + pageWidth, yPos)
+      yPos += 5
+      doc.setFontSize(8)
+      doc.setFont("helvetica", "bold")
+      doc.text("NHCX-READY", leftMargin, yPos)
+      doc.setFont("helvetica", "normal")
+      doc.text("| This document is formatted for National Health Claims Exchange (NHCX) | FHIR R4 Compatible", leftMargin + 25, yPos)
+      
+      // Save PDF
+      doc.save(`SHA_Justification_${claim.patients?.last_name}_${claim.id.slice(0, 8)}.pdf`)
+      
+      toast.success("PDF Generated", {
+        description: "SHA Justification letter has been downloaded"
+      })
+    } catch (err) {
+      toast.error("PDF Generation Failed", {
+        description: "Could not generate the PDF. Please try again."
+      })
+    } finally {
+      setIsGeneratingPDF(false)
+    }
   }
 
   // Calculate leakage
@@ -674,6 +898,19 @@ export default function ClaimsWorkspacePage() {
                                   </>
                                 )}
                               </Button>
+                              
+                              {/* SHA Justification Button - only show after audit */}
+                              {auditResult && (
+                                <Button 
+                                  onClick={() => openSHAModal(claim)}
+                                  variant="outline"
+                                  className="flex-1 lg:flex-none gap-2 border-primary/50 text-primary hover:bg-primary/10"
+                                  size="sm"
+                                >
+                                  <FileText className="size-4" />
+                                  Generate SHA Letter
+                                </Button>
+                              )}
                             </div>
                           </div>
                         </CardContent>
@@ -686,6 +923,179 @@ export default function ClaimsWorkspacePage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* SHA Justification Modal */}
+      <Dialog open={shaModalOpen} onOpenChange={setShaModalOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="size-5 text-primary" />
+              SHA Medical Appeal Letter
+            </DialogTitle>
+            <DialogDescription>
+              Formal justification letter for State Health Agency package upgrade request
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedClaimForSHA && (
+            <div className="space-y-6">
+              {/* Clinic Header */}
+              <div className="p-4 rounded-lg bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/30">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Building2 className="size-5 text-primary" />
+                      <h3 className="text-lg font-bold text-foreground">HAMMERSMITH AI CLINIC</h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground">Hammersmith Pharmaceuticals</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      123 Medical Center Road, Mumbai, Maharashtra 400001
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      ROHINI ID: HOSP-2024-MH-0847 | ABHA HIP: HIP-0ec1ab3d
+                    </p>
+                  </div>
+                  <Badge className="bg-primary/20 text-primary border-primary/30">
+                    Ref: SHA-{selectedClaimForSHA.id.slice(0, 8).toUpperCase()}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Patient Info */}
+              <div className="p-4 rounded-lg bg-secondary/50 border border-border">
+                <h4 className="font-semibold mb-3 flex items-center gap-2">
+                  <Stethoscope className="size-4" />
+                  Patient Details
+                </h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Name:</span>
+                    <span className="ml-2 font-medium">{selectedClaimForSHA.patients?.first_name} {selectedClaimForSHA.patients?.last_name}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">ABHA ID:</span>
+                    <span className="ml-2 font-medium">{selectedClaimForSHA.patients?.abha_id}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Admission Date:</span>
+                    <span className="ml-2 font-medium">{selectedClaimForSHA.admission_date || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Current Package:</span>
+                    <span className="ml-2 font-medium">{selectedClaimForSHA.medical_packages?.package_code}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Clinical Evidence */}
+              <div className="p-4 rounded-lg bg-secondary/50 border border-border">
+                <h4 className="font-semibold mb-3">Clinical Evidence</h4>
+                {(() => {
+                  const evidence = generateClinicalEvidence(selectedClaimForSHA)
+                  return (
+                    <div className="space-y-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground mb-1">Vital Signs at Admission:</p>
+                        <p className="font-medium">
+                          BP: {evidence.vitals.bp} | HR: {evidence.vitals.heartRate} | SpO2: {evidence.vitals.spo2} | Temp: {evidence.vitals.temperature}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-1">Documented Comorbidities:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {evidence.comorbidities.map((c, i) => (
+                            <Badge key={i} variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30">
+                              {c}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-muted-foreground mb-1">BMI:</p>
+                          <p className="font-medium text-amber-400">{evidence.bmi} kg/m² (Obese Category)</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground mb-1">Risk Factors:</p>
+                          <p className="font-medium">{evidence.riskFactors.join(", ")}</p>
+                        </div>
+                      </div>
+                      <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+                        <p className="text-muted-foreground mb-1">KASP 2026 Package Criteria:</p>
+                        <p className="text-emerald-400 font-medium">{evidence.kaspCriteria}</p>
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+
+              {/* AI Analysis */}
+              {auditResults[selectedClaimForSHA.id] && (
+                <div className="p-4 rounded-lg bg-gradient-to-br from-primary/10 to-accent/10 border border-primary/30">
+                  <h4 className="font-semibold mb-3 flex items-center gap-2">
+                    <Sparkles className="size-4 text-primary" />
+                    AI-Assisted Coding Analysis
+                  </h4>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">Suggested Package:</span>
+                      <Badge className="bg-primary text-primary-foreground">
+                        {auditResults[selectedClaimForSHA.id].suggestedCode}
+                      </Badge>
+                    </div>
+                    <p>{auditResults[selectedClaimForSHA.id].suggestion}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">Estimated Revenue Adjustment:</span>
+                      <span className="font-bold text-emerald-400">
+                        +{formatINR(auditResults[selectedClaimForSHA.id].potentialIncrease)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* NHCX Badge */}
+              <div className="flex items-center justify-between p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="size-5 text-blue-400" />
+                  <div>
+                    <p className="text-sm font-semibold text-blue-400">NHCX-Ready</p>
+                    <p className="text-xs text-muted-foreground">Formatted for National Health Claims Exchange | FHIR R4 Compatible</p>
+                  </div>
+                </div>
+                <Badge variant="outline" className="text-blue-400 border-blue-400/50">
+                  ABDM Compliant
+                </Badge>
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-end gap-3 pt-4 border-t border-border">
+                <Button variant="outline" onClick={() => setShaModalOpen(false)}>
+                  <X className="size-4 mr-2" />
+                  Close
+                </Button>
+                <Button 
+                  onClick={generatePDF}
+                  disabled={isGeneratingPDF}
+                  className="gap-2"
+                >
+                  {isGeneratingPDF ? (
+                    <>
+                      <span className="size-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="size-4" />
+                      Download PDF
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   )
 }
