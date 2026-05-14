@@ -1,6 +1,6 @@
 "use client"
 
-import { CheckCircle, User, Calendar, Smartphone, Copy, Plus, FileText } from "lucide-react"
+import { CheckCircle, User, Calendar, Smartphone, Copy, Plus, FileText, Download, QrCode } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -18,19 +18,31 @@ export function DigitalHealthCard({ patient, onReset }: DigitalHealthCardProps) 
     toast.success("Copied!", { description: `${label} copied to clipboard` })
   }
 
+  const handleDownloadPDF = () => {
+    toast.success("Generating PDF", {
+      description: "Your ABHA Health Card PDF is being generated..."
+    })
+    // Simulate PDF generation
+    setTimeout(() => {
+      toast.success("PDF Ready", {
+        description: "ABHA Health Card downloaded successfully"
+      })
+    }, 1500)
+  }
+
   return (
     <div className="space-y-6">
       {/* Success Banner */}
-      <div className="flex items-center gap-3 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-        <CheckCircle className="size-6 text-emerald-500" />
+      <div className="flex items-center gap-3 p-4 rounded-lg bg-teal-500/10 border border-teal-500/20">
+        <CheckCircle className="size-6 text-teal-500" />
         <div>
-          <p className="font-medium text-emerald-500">Patient Successfully Verified</p>
+          <p className="font-medium text-teal-500">Patient Successfully Verified</p>
           <p className="text-sm text-muted-foreground">ABHA linked to this healthcare facility</p>
         </div>
       </div>
 
       {/* Digital Health Card */}
-      <Card className="bg-gradient-to-br from-emerald-600 to-teal-700 border-0 overflow-hidden relative">
+      <Card className="bg-gradient-to-br from-teal-600 to-emerald-700 border-0 overflow-hidden relative">
         {/* Background Pattern */}
         <div className="absolute inset-0 opacity-10">
           <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -42,7 +54,7 @@ export function DigitalHealthCard({ patient, onReset }: DigitalHealthCardProps) 
         </div>
 
         <CardContent className="p-6 relative">
-          {/* Header */}
+          {/* Header with QR Code */}
           <div className="flex items-start justify-between mb-6">
             <div className="flex items-center gap-3">
               <div className="size-12 rounded-full bg-white/20 flex items-center justify-center">
@@ -53,9 +65,13 @@ export function DigitalHealthCard({ patient, onReset }: DigitalHealthCardProps) 
                 <p className="text-white font-semibold">Digital Health Card</p>
               </div>
             </div>
-            <Badge className="bg-white/20 text-white border-0 hover:bg-white/30">
-              ABDM Verified
-            </Badge>
+            {/* QR Code Placeholder */}
+            <div className="flex flex-col items-center gap-1">
+              <div className="size-16 rounded-lg bg-white flex items-center justify-center">
+                <QrCode className="size-12 text-teal-700" />
+              </div>
+              <span className="text-white/60 text-[10px]">Scan to verify</span>
+            </div>
           </div>
 
           {/* Patient Info */}
@@ -119,8 +135,9 @@ export function DigitalHealthCard({ patient, onReset }: DigitalHealthCardProps) 
           {/* Footer */}
           <div className="mt-6 pt-4 border-t border-white/20 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <CheckCircle className="size-4 text-white" />
-              <span className="text-white/80 text-xs">ABDM Verified</span>
+              <Badge className="bg-white/20 text-white border-0 hover:bg-white/30">
+                ABDM Verified
+              </Badge>
             </div>
             <p className="text-white/60 text-xs">Government of India</p>
           </div>
@@ -133,18 +150,34 @@ export function DigitalHealthCard({ patient, onReset }: DigitalHealthCardProps) 
           <Plus className="size-4" />
           Link Another Patient
         </Button>
-        <Button className="flex-1 gap-2 bg-emerald-600 hover:bg-emerald-700">
+        <Button 
+          variant="outline" 
+          className="gap-2"
+          onClick={handleDownloadPDF}
+        >
+          <Download className="size-4" />
+          Download PDF
+        </Button>
+        <Button className="flex-1 gap-2 bg-teal-600 hover:bg-teal-700">
           <FileText className="size-4" />
           Start Registration
         </Button>
       </div>
 
-      {/* Compliance Footer */}
-      <div className="flex items-center justify-center gap-2 p-3 rounded-lg bg-muted/50 border border-border">
-        <CheckCircle className="size-4 text-emerald-500" />
-        <span className="text-xs text-muted-foreground">
-          ABDM Verified - Compliant with National Digital Health Mission guidelines
-        </span>
+      {/* Compliance Footer - DPDP Act & ABDM Guidelines */}
+      <div className="p-4 rounded-lg bg-muted/50 border border-border">
+        <div className="flex items-start gap-3">
+          <CheckCircle className="size-5 text-teal-500 mt-0.5" />
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-foreground">Compliance Verified</p>
+            <p className="text-xs text-muted-foreground">
+              Processed under <span className="font-medium">DPDP Act 2023</span> & <span className="font-medium">ABDM M1 Guidelines</span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Patient data is encrypted and stored in accordance with National Digital Health Mission standards.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   )

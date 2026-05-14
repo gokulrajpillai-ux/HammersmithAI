@@ -9,7 +9,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 
 interface ABHASearchProps {
-  onSubmit: (value: string) => void
+  onSubmit: (value: string, transactionId: string) => void
+}
+
+// Generate a mock transaction ID (simulating ABDM API response)
+function generateTransactionId(): string {
+  const timestamp = Date.now().toString(36)
+  const randomPart = Math.random().toString(36).substring(2, 10)
+  return `ABDM-TXN-${timestamp}-${randomPart}`.toUpperCase()
 }
 
 export function ABHASearch({ onSubmit }: ABHASearchProps) {
@@ -52,9 +59,15 @@ export function ABHASearch({ onSubmit }: ABHASearchProps) {
     }
 
     setIsLoading(true)
+    
+    // Simulate ABDM API call that returns a transaction ID
     setTimeout(() => {
+      const transactionId = generateTransactionId()
       setIsLoading(false)
-      onSubmit(value)
+      toast.success("OTP Initiated", {
+        description: `Transaction ID: ${transactionId.slice(0, 15)}...`
+      })
+      onSubmit(value, transactionId)
     }, 1000)
   }
 
@@ -62,7 +75,7 @@ export function ABHASearch({ onSubmit }: ABHASearchProps) {
     <Card className="bg-card border-border">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Search className="size-5 text-emerald-500" />
+          <Search className="size-5 text-teal-500" />
           Search / Link ABHA
         </CardTitle>
         <CardDescription>
@@ -100,7 +113,7 @@ export function ABHASearch({ onSubmit }: ABHASearchProps) {
                 <Button 
                   onClick={() => handleSubmit("abha")}
                   disabled={isLoading || abhaId.replace(/-/g, "").length !== 14}
-                  className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+                  className="gap-2 bg-teal-600 hover:bg-teal-700"
                 >
                   {isLoading ? (
                     <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -137,7 +150,7 @@ export function ABHASearch({ onSubmit }: ABHASearchProps) {
                 <Button 
                   onClick={() => handleSubmit("mobile")}
                   disabled={isLoading || mobile.length !== 10}
-                  className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+                  className="gap-2 bg-teal-600 hover:bg-teal-700"
                 >
                   {isLoading ? (
                     <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -168,7 +181,7 @@ export function ABHASearch({ onSubmit }: ABHASearchProps) {
                 <Button 
                   onClick={() => handleSubmit("address")}
                   disabled={isLoading || !abhaAddress.includes("@")}
-                  className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+                  className="gap-2 bg-teal-600 hover:bg-teal-700"
                 >
                   {isLoading ? (
                     <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

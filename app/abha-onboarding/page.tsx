@@ -21,14 +21,22 @@ export interface PatientData {
 export default function ABHAOnboardingPage() {
   const [step, setStep] = useState<"search" | "otp" | "verified">("search")
   const [searchValue, setSearchValue] = useState("")
+  const [transactionId, setTransactionId] = useState<string | null>(null)
   const [verifiedPatient, setVerifiedPatient] = useState<PatientData | null>(null)
 
-  const handleSearchSubmit = (value: string) => {
+  const handleSearchSubmit = (value: string, txnId: string) => {
     setSearchValue(value)
+    setTransactionId(txnId)
     setStep("otp")
   }
 
-  const handleOTPVerified = () => {
+  const handleOTPVerified = (txnId: string) => {
+    // Verify transaction ID matches for secure backend handshake
+    if (txnId !== transactionId) {
+      console.error("[v0] Transaction ID mismatch - potential security issue")
+      return
+    }
+    
     // Mock patient data after OTP verification
     setVerifiedPatient({
       abhaId: "91-1234-5678-9012",
@@ -44,6 +52,7 @@ export default function ABHAOnboardingPage() {
   const handleReset = () => {
     setStep("search")
     setSearchValue("")
+    setTransactionId(null)
     setVerifiedPatient(null)
   }
 
@@ -59,9 +68,10 @@ export default function ABHAOnboardingPage() {
               {step === "search" && (
                 <ABHASearch onSubmit={handleSearchSubmit} />
               )}
-              {step === "otp" && (
+              {step === "otp" && transactionId && (
                 <OTPVerification 
-                  identifier={searchValue} 
+                  identifier={searchValue}
+                  transactionId={transactionId}
                   onVerified={handleOTPVerified}
                   onBack={() => setStep("search")}
                 />

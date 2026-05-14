@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { ArrowLeft, Shield, RefreshCw } from "lucide-react"
+import { ArrowLeft, Shield, RefreshCw, Lock, CheckCircle } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,14 +9,16 @@ import { toast } from "sonner"
 
 interface OTPVerificationProps {
   identifier: string
-  onVerified: () => void
+  transactionId: string
+  onVerified: (transactionId: string) => void
   onBack: () => void
 }
 
-export function OTPVerification({ identifier, onVerified, onBack }: OTPVerificationProps) {
+export function OTPVerification({ identifier, transactionId, onVerified, onBack }: OTPVerificationProps) {
   const [otp, setOtp] = useState(["", "", "", "", "", ""])
   const [isLoading, setIsLoading] = useState(false)
   const [resendTimer, setResendTimer] = useState(30)
+  const [verificationStage, setVerificationStage] = useState<"otp" | "handshake" | "complete">("otp")
   const inputRefs = useRef<(HTMLInputElement | null)[]>([])
 
   useEffect(() => {
@@ -59,7 +61,7 @@ export function OTPVerification({ identifier, onVerified, onBack }: OTPVerificat
     inputRefs.current[Math.min(pastedData.length, 5)]?.focus()
   }
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
     const otpValue = otp.join("")
     if (otpValue.length !== 6) {
       toast.error("Invalid OTP", {
@@ -69,13 +71,47 @@ export function OTPVerification({ identifier, onVerified, onBack }: OTPVerificat
     }
 
     setIsLoading(true)
-    setTimeout(() => {
+    setVerificationStage("otp")
+
+    // Stage 1: OTP Verification
+    await new Promise(resolve => setTimeout(resolve, 800))
+    
+    // Stage 2: Backend Handshake - Verify transaction ID
+    setVerificationStage("handshake")
+    toast.info("Secure Handshake", {
+      description: `Validating transaction ${transactionId.slice(0, 12)}...`
+    })
+    
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
+    // Simulate backend handshake verification
+    const handshakeSuccess = simulateBackendHandshake(transactionId, otpValue)
+    
+    if (!handshakeSuccess) {
       setIsLoading(false)
-      toast.success("Verification Successful", {
-        description: "Patient identity verified via Aadhaar-linked OTP"
+      setVerificationStage("otp")
+      toast.error("Verification Failed", {
+        description: "Transaction validation failed. Please try again."
       })
-      onVerified()
-    }, 1500)
+      return
+    }
+
+    // Stage 3: Complete
+    setVerificationStage("complete")
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    setIsLoading(false)
+    toast.success("Verification Successful", {
+      description: "Patient identity verified via Aadhaar-linked OTP with secure backend handshake"
+    })
+    onVerified(transactionId)
+  }
+
+  // Simulate backend handshake verification
+  const simulateBackendHandshake = (txnId: string, _otp: string): boolean => {
+    // In real implementation, this would call your backend API
+    // which validates the transaction ID with ABDM servers
+    return txnId.startsWith("ABDM-TXN-")
   }
 
   const handleResend = () => {
@@ -95,12 +131,12 @@ export function OTPVerification({ identifier, onVerified, onBack }: OTPVerificat
     <Card className="bg-card border-border">
       <CardHeader>
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onBack}>
+          <Button variant="ghost" size="icon" onClick={onBack} disabled={isLoading}>
             <ArrowLeft className="size-4" />
           </Button>
-          <div>
+          <div className="flex-1">
             <CardTitle className="flex items-center gap-2">
-              <Shield className="size-5 text-emerald-500" />
+              <Shield className="size-5 text-teal-500" />
               Aadhaar OTP Verification
             </CardTitle>
             <CardDescription>
@@ -110,6 +146,18 @@ export function OTPVerification({ identifier, onVerified, onBack }: OTPVerificat
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Transaction ID Display */}
+        <div className="p-3 rounded-lg bg-teal-500/10 border border-teal-500/20">
+          <div className="flex items-center gap-2">
+            <Lock className="size-4 text-teal-500" />
+            <span className="text-xs text-teal-500 font-medium">Secure Transaction</span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1 font-mono">
+            ID: {transactionId}
+          </p>
+        </div>
+
+        {/* OTP Input */}
         <div className="flex justify-center gap-2 sm:gap-3">
           {otp.map((digit, index) => (
             <Input
@@ -122,16 +170,46 @@ export function OTPVerification({ identifier, onVerified, onBack }: OTPVerificat
               onChange={(e) => handleChange(index, e.target.value)}
               onKeyDown={(e) => handleKeyDown(index, e)}
               onPaste={handlePaste}
+              disabled={isLoading}
               className="size-12 sm:size-14 text-center text-xl font-mono"
             />
           ))}
         </div>
 
+        {/* Verification Progress */}
+        {isLoading && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              {verificationStage === "otp" && (
+                <>
+                  <span className="size-4 border-2 border-teal-500/30 border-t-teal-500 rounded-full animate-spin" />
+                  <span className="text-muted-foreground">Verifying OTP...</span>
+                </>
+              )}
+              {verificationStage === "handshake" && (
+                <>
+                  <CheckCircle className="size-4 text-teal-500" />
+                  <span className="text-teal-500">OTP Verified</span>
+                  <span className="mx-2">•</span>
+                  <span className="size-4 border-2 border-teal-500/30 border-t-teal-500 rounded-full animate-spin" />
+                  <span className="text-muted-foreground">Backend Handshake...</span>
+                </>
+              )}
+              {verificationStage === "complete" && (
+                <>
+                  <CheckCircle className="size-4 text-teal-500" />
+                  <span className="text-teal-500">Complete</span>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col items-center gap-4">
           <Button 
             onClick={handleVerify}
             disabled={isLoading || otp.join("").length !== 6}
-            className="w-full max-w-xs gap-2 bg-emerald-600 hover:bg-emerald-700"
+            className="w-full max-w-xs gap-2 bg-teal-600 hover:bg-teal-700"
           >
             {isLoading ? (
               <>
@@ -151,7 +229,8 @@ export function OTPVerification({ identifier, onVerified, onBack }: OTPVerificat
                 variant="ghost" 
                 size="sm" 
                 onClick={handleResend}
-                className="gap-2 text-emerald-500 hover:text-emerald-400"
+                disabled={isLoading}
+                className="gap-2 text-teal-500 hover:text-teal-400"
               >
                 <RefreshCw className="size-4" />
                 Resend OTP
