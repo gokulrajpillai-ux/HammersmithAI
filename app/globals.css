@@ -156,3 +156,15 @@ html.light {
 .animate-pulse-red {
   animation: pulse-red 2s ease-in-out infinite;
 }
+
+/* Confetti celebration animation */
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh) rotate(720deg);
+    opacity: 0;
+  }
+}

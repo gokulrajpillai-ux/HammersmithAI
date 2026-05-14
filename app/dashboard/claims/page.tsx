@@ -140,8 +140,8 @@ const aiSuggestions: Record<string, { suggestion: string; potentialIncrease: num
 export default function ClaimsWorkspacePage() {
   const [claims, setClaims] = useState<Claim[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [auditingClaimId, setAuditingClaimId] = useState<string | null>(null)
-  const [auditResults, setAuditResults] = useState<Record<string, { suggestion: string; potentialIncrease: number }>>({})
+  const [loadingClaims, setLoadingClaims] = useState<string[]>([]) // Track which claims are being audited
+  const [auditResults, setAuditResults] = useState<Record<string, { suggestion: string; potentialIncrease: number; suggestedCode?: string }>>({})
 
   // Fetch claims from Supabase
   const fetchClaims = async () => {
@@ -211,32 +211,127 @@ export default function ClaimsWorkspacePage() {
     fetchClaims()
   }, [])
 
-  // Run AI Audit for a specific claim
+  // Run AI Audit for a specific claim using Edge Function
   const runAIAudit = async (claim: Claim) => {
     const packageCode = claim.medical_packages?.package_code
+    const clinicalNotes = claim.clinical_notes
     if (!packageCode) return
 
-    setAuditingClaimId(claim.id)
+    // Add claim to loading state
+    setLoadingClaims(prev => [...prev, claim.id])
 
-    // Simulate AI analysis
-    await new Promise(resolve => setTimeout(resolve, 2500))
+    try {
+      let suggestion: { suggestion: string; potentialIncrease: number; suggestedCode?: string } | null = null
 
-    const suggestion = aiSuggestions[packageCode]
-    if (suggestion) {
-      setAuditResults(prev => ({
-        ...prev,
-        [claim.id]: suggestion
-      }))
-      toast.success("AI Audit Complete", {
-        description: `Found optimization opportunity for ${claim.patients?.first_name} ${claim.patients?.last_name}`
+      if (isSupabaseConfigured()) {
+        const supabase = createClient()
+        
+        // Call the analyze-claim Edge Function
+        const { data, error } = await supabase.functions.invoke('analyze-claim', {
+          body: { 
+            clinical_notes: clinicalNotes,
+            org_id: DEFAULT_ORG_ID,
+            claim_id: claim.id,
+            current_package_code: packageCode
+          }
+        })
+
+        if (error) {
+          throw new Error(error.message || 'Edge Function failed')
+        }
+
+        if (data?.suggested_package_code && data?.justification) {
+          suggestion = {
+            suggestion: data.justification,
+            potentialIncrease: data.potential_increase || 0,
+            suggestedCode: data.suggested_package_code
+          }
+
+          // Update the claims table in Supabase with AI results
+          const { error: updateError } = await supabase
+            .from('claims')
+            .update({
+              ai_suggested_code: data.suggested_package_code,
+              ai_justification: data.justification,
+              ai_potential_increase: data.potential_increase,
+              ai_audited_at: new Date().toISOString()
+            })
+            .eq('id', claim.id)
+            .eq('org_id', DEFAULT_ORG_ID)
+
+          if (updateError) {
+            console.error("[v0] Failed to save AI results:", updateError)
+            toast.warning("Audit complete but save failed", {
+              description: "AI results could not be saved to database"
+            })
+          }
+        }
+      } else {
+        // Fallback to mock suggestions when Supabase not configured
+        await new Promise(resolve => setTimeout(resolve, 2500))
+        const mockSuggestion = aiSuggestions[packageCode]
+        if (mockSuggestion) {
+          suggestion = { ...mockSuggestion, suggestedCode: packageCode.replace('A', 'B') }
+        }
+      }
+
+      if (suggestion) {
+        setAuditResults(prev => ({
+          ...prev,
+          [claim.id]: suggestion!
+        }))
+
+        // Show confetti effect for big optimizations (> 5000)
+        if (suggestion.potentialIncrease > 5000) {
+          toast.success("Major Optimization Found!", {
+            description: `Suggested Code: ${suggestion.suggestedCode} - Potential increase: ${formatINR(suggestion.potentialIncrease)}`,
+            duration: 6000
+          })
+          // Trigger confetti if available (we'll add a simple celebration)
+          triggerCelebration()
+        } else {
+          toast.success("AI Audit Complete", {
+            description: `Found optimization for ${claim.patients?.first_name} ${claim.patients?.last_name}`
+          })
+        }
+      } else {
+        toast.info("Audit Complete", {
+          description: "No optimization opportunities found for this claim"
+        })
+      }
+    } catch (err) {
+      console.error("[v0] AI Audit error:", err)
+      toast.error("AI Audit Failed", {
+        description: err instanceof Error ? err.message : "Edge Function timed out or encountered an error. Please try again."
       })
-    } else {
-      toast.info("Audit Complete", {
-        description: "No optimization opportunities found for this claim"
-      })
+    } finally {
+      // Remove claim from loading state
+      setLoadingClaims(prev => prev.filter(id => id !== claim.id))
     }
+  }
 
-    setAuditingClaimId(null)
+  // Simple celebration effect for big optimizations
+  const triggerCelebration = () => {
+    const colors = ['#10b981', '#059669', '#0f766e', '#14b8a6']
+    const confettiCount = 50
+    
+    for (let i = 0; i < confettiCount; i++) {
+      const confetti = document.createElement('div')
+      confetti.style.cssText = `
+        position: fixed;
+        width: 10px;
+        height: 10px;
+        background: ${colors[Math.floor(Math.random() * colors.length)]};
+        left: ${Math.random() * 100}vw;
+        top: -10px;
+        border-radius: 50%;
+        pointer-events: none;
+        z-index: 9999;
+        animation: confetti-fall 3s ease-out forwards;
+      `
+      document.body.appendChild(confetti)
+      setTimeout(() => confetti.remove(), 3000)
+    }
   }
 
   // Format currency in Indian format
@@ -374,7 +469,7 @@ export default function ClaimsWorkspacePage() {
                     const hasLeakage = leakage > 0
                     const progressPercent = kaspRate > 0 ? Math.min((hospitalBill / kaspRate) * 100, 150) : 0
                     const auditResult = auditResults[claim.id]
-                    const isAuditing = auditingClaimId === claim.id
+                    const isAuditing = loadingClaims.includes(claim.id)
 
                     return (
                       <Card 
