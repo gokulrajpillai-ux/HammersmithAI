@@ -37,14 +37,18 @@ export interface Profile {
   role?: string
 }
 
+// Default organization ID for Hammersmith AI Clinic (demo fallback)
+export const DEFAULT_ORG_ID = '0ec1ab3d-4a89-4dea-aa25-23e8b4016b5d'
+
 // Helper function to get current user's org_id from profiles table
-export async function getCurrentUserOrgId(): Promise<string | null> {
-  if (!isSupabaseConfigured()) return null
+// Falls back to Hammersmith AI Clinic org_id for demo purposes
+export async function getCurrentUserOrgId(): Promise<string> {
+  if (!isSupabaseConfigured()) return DEFAULT_ORG_ID
   
   const supabase = createClient()
   
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  if (!user) return DEFAULT_ORG_ID
   
   const { data: profile } = await supabase
     .from('profiles')
@@ -52,7 +56,7 @@ export async function getCurrentUserOrgId(): Promise<string | null> {
     .eq('id', user.id)
     .single()
   
-  return profile?.org_id || null
+  return profile?.org_id || DEFAULT_ORG_ID
 }
 
 // Singleton pattern for client-side Supabase client

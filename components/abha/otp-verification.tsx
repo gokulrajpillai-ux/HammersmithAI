@@ -105,17 +105,8 @@ export function OTPVerification({ identifier, transactionId, onVerified, onBack 
       if (isSupabaseConfigured()) {
         const supabase = createClient()
         
-        // Fetch current user's org_id for RLS scoping
+        // Fetch current user's org_id for RLS scoping (falls back to Hammersmith AI Clinic)
         const orgId = await getCurrentUserOrgId()
-        
-        if (!orgId) {
-          toast.error("Organization Not Found", {
-            description: "Could not determine your organization. Please ensure you are logged in."
-          })
-          setIsLoading(false)
-          setVerificationStage("otp")
-          return
-        }
         
         // Generate patient data from the verified ABHA
         const fullName = generatePatientName(identifier)

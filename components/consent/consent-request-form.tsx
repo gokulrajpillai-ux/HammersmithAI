@@ -79,17 +79,8 @@ export function ConsentRequestForm() {
         setIsSyncing(true)
         const supabase = createClient()
         
-        // Fetch current user's org_id for RLS scoping
+        // Fetch current user's org_id for RLS scoping (falls back to Hammersmith AI Clinic)
         const orgId = await getCurrentUserOrgId()
-        
-        if (!orgId) {
-          toast.error("Organization Not Found", {
-            description: "Could not determine your organization. Please ensure you are logged in."
-          })
-          setIsSubmitting(false)
-          setIsSyncing(false)
-          return
-        }
         
         // First, try to find the patient by ABHA address within the same org
         const { data: patientData } = await supabase
