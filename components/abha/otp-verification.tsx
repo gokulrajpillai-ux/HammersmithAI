@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
-import { createClient, isSupabaseConfigured } from "@/lib/supabase"
+import { createClient, isSupabaseConfigured, getCurrentUserOrgId } from "@/lib/supabase"
 import type { Patient } from "@/lib/supabase"
 
 interface OTPVerificationProps {
@@ -105,11 +105,34 @@ export function OTPVerification({ identifier, transactionId, onVerified, onBack 
       if (isSupabaseConfigured()) {
         const supabase = createClient()
         
+        // Fetch current user's org_id for RLS scoping
+        const orgId = await getCurrentUserOrgId()
+        
+        if (!orgId) {
+          toast.error("Organization Not Found", {
+            description: "Could not determine your organization. Please ensure you are logged in."
+          })
+          setIsLoading(false)
+          setVerificationStage("otp")
+          return
+        }
+        
         // Generate patient data from the verified ABHA
+        const fullName = generatePatientName(identifier)
+        const nameParts = splitName(fullName)
+        const patientDob = generateDob(identifier)
+        const patientGender = generateGender(identifier)
+        const patientMobile = generateMobile(identifier)
+        
         const patientData: Patient = {
+          org_id: orgId,
           abha_id: generateAbhaId(identifier),
           abha_address: generateAbhaAddress(identifier),
-          full_name: generatePatientName(identifier),
+          first_name: nameParts.firstName,
+          last_name: nameParts.lastName,
+          dob: patientDob,
+          gender: patientGender,
+          mobile: patientMobile,
           is_abha_verified: true,
         }
         
@@ -183,6 +206,39 @@ export function OTPVerification({ identifier, transactionId, onVerified, onBack 
     // In real implementation, this would come from ABDM API response
     if (id.includes("@")) return id.split("@")[0].replace(/\./g, " ").replace(/\b\w/g, l => l.toUpperCase())
     return "Verified Patient"
+  }
+
+  // Split full name into first_name and last_name
+  const splitName = (fullName: string): { firstName: string; lastName: string } => {
+    const parts = fullName.trim().split(/\s+/)
+    if (parts.length === 1) {
+      return { firstName: parts[0], lastName: "" }
+    }
+    const lastName = parts.pop() || ""
+    const firstName = parts.join(" ")
+    return { firstName, lastName }
+  }
+
+  // Generate date of birth (in real implementation, comes from ABDM API)
+  const generateDob = (_id: string): string => {
+    // Mock DOB - in production this comes from ABDM verification response
+    return "1990-01-15"
+  }
+
+  // Generate gender (in real implementation, comes from ABDM API)
+  const generateGender = (_id: string): string => {
+    // Mock gender - in production this comes from ABDM verification response
+    return "Male"
+  }
+
+  // Generate mobile number (in real implementation, comes from ABDM API)
+  const generateMobile = (id: string): string => {
+    // If identifier is a mobile number, use it
+    if (/^\d{10}$/.test(id.replace(/\D/g, ""))) {
+      return id.replace(/\D/g, "")
+    }
+    // Mock mobile - in production this comes from ABDM verification response
+    return "9876543210"
   }
 
   const handleResend = () => {

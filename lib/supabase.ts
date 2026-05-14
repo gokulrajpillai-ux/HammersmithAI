@@ -1,14 +1,16 @@
 import { createBrowserClient } from '@supabase/ssr'
 
-// Database types for our RCM application
+// Database types for our RCM application - matches backend schema
 export interface Patient {
   id?: string
+  org_id: string
   abha_id: string
   abha_address: string
-  full_name: string
+  first_name: string
+  last_name: string
   gender?: string
-  date_of_birth?: string
-  mobile_number?: string
+  dob?: string
+  mobile?: string
   is_abha_verified: boolean
   created_at?: string
   updated_at?: string
@@ -16,13 +18,41 @@ export interface Patient {
 
 export interface ConsentLog {
   id?: string
-  patient_id: string
+  org_id: string
+  patient_id?: string | null
   abha_address: string
   purpose: string
   record_types: string[]
   expiry_date: string
+  hip_id?: string
   status?: 'pending' | 'approved' | 'rejected' | 'expired'
   created_at?: string
+}
+
+export interface Profile {
+  id: string
+  org_id: string
+  first_name?: string
+  last_name?: string
+  role?: string
+}
+
+// Helper function to get current user's org_id from profiles table
+export async function getCurrentUserOrgId(): Promise<string | null> {
+  if (!isSupabaseConfigured()) return null
+  
+  const supabase = createClient()
+  
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('org_id')
+    .eq('id', user.id)
+    .single()
+  
+  return profile?.org_id || null
 }
 
 // Singleton pattern for client-side Supabase client

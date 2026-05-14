@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { toast } from "sonner"
-import { createClient, isSupabaseConfigured } from "@/lib/supabase"
+import { createClient, isSupabaseConfigured, getCurrentUserOrgId } from "@/lib/supabase"
 
 const recordTypes = [
   { id: "diagnostic", label: "Diagnostic Reports", icon: Stethoscope },
@@ -79,20 +79,35 @@ export function ConsentRequestForm() {
         setIsSyncing(true)
         const supabase = createClient()
         
-        // First, try to find the patient by ABHA address
+        // Fetch current user's org_id for RLS scoping
+        const orgId = await getCurrentUserOrgId()
+        
+        if (!orgId) {
+          toast.error("Organization Not Found", {
+            description: "Could not determine your organization. Please ensure you are logged in."
+          })
+          setIsSubmitting(false)
+          setIsSyncing(false)
+          return
+        }
+        
+        // First, try to find the patient by ABHA address within the same org
         const { data: patientData } = await supabase
           .from('patients')
           .select('id')
           .eq('abha_address', abhaAddress)
+          .eq('org_id', orgId)
           .single()
         
-        // Prepare consent log data
+        // Prepare consent log data with org_id for RLS
         const consentLog = {
+          org_id: orgId,
           patient_id: patientData?.id || null,
           abha_address: abhaAddress,
           purpose: purpose,
           record_types: selectedRecords,
           expiry_date: calculateExpiryDate(duration),
+          hip_id: `HIP-${orgId.slice(0, 8)}`,
           status: 'pending' as const,
         }
         
