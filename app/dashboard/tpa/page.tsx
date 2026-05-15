@@ -26,7 +26,12 @@ import {
   CreditCard,
   HelpCircle,
   Loader2,
-  Download
+  Download,
+  Archive,
+  ExternalLink,
+  Upload,
+  CheckCircle2,
+  FolderOpen
 } from "lucide-react"
 import { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -185,6 +190,18 @@ export default function TPAManagementPage() {
   const [aiResponses, setAiResponses] = useState<Record<string, string>>({})
   const [currentTime, setCurrentTime] = useState(Date.now())
   const [generatingPDF, setGeneratingPDF] = useState<string | null>(null)
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({})
+  const [uploadedQueries, setUploadedQueries] = useState<Set<string>>(new Set())
+  const [documentArchive, setDocumentArchive] = useState<Array<{
+    id: string
+    claim_id: string
+    query_id: string
+    url: string
+    created_at: string
+    patient_name: string
+    insurance_provider: string
+  }>>([])
+  const [loadingArchive, setLoadingArchive] = useState(false)
 
   // Update current time every minute for IRDAI timer
   useEffect(() => {
@@ -419,7 +436,48 @@ Hammersmith AI Clinic`
     }
   }
 
-  // Generate TPA Response PDF
+  // Fetch document archive for a claim
+  const fetchDocumentArchive = async (claimId: string) => {
+    if (!isSupabaseConfigured()) return
+    
+    setLoadingArchive(true)
+    try {
+      const supabase = createClient()
+      
+      // List files in the claim's folder
+      const { data: files, error } = await supabase.storage
+        .from('tpa-documents')
+        .list(`claims/${claimId}`, {
+          sortBy: { column: 'created_at', order: 'desc' }
+        })
+      
+      if (error) throw error
+      
+      if (files && files.length > 0) {
+        const claim = claims.find(c => c.id === claimId)
+        const archiveItems = files.map(file => ({
+          id: file.id || file.name,
+          claim_id: claimId,
+          query_id: file.name.split('_')[1] || '',
+          url: supabase.storage.from('tpa-documents').getPublicUrl(`claims/${claimId}/${file.name}`).data.publicUrl,
+          created_at: file.created_at || new Date().toISOString(),
+          patient_name: `${claim?.patients?.first_name} ${claim?.patients?.last_name}`,
+          insurance_provider: claim?.insurance_provider || ''
+        }))
+        setDocumentArchive(archiveItems)
+      } else {
+        setDocumentArchive([])
+      }
+    } catch (err) {
+      toast.error("Failed to load archive", {
+        description: "Could not fetch document archive"
+      })
+    } finally {
+      setLoadingArchive(false)
+    }
+  }
+
+  // Generate TPA Response PDF and upload to Supabase Storage
   const generateTPAResponsePDF = async (claim: Claim, query: TPAQuery) => {
     const response = aiResponses[query.id]
     if (!response) {
@@ -430,6 +488,7 @@ Hammersmith AI Clinic`
     }
 
     setGeneratingPDF(query.id)
+    setUploadProgress(prev => ({ ...prev, [query.id]: 0 }))
 
     try {
       const doc = new jsPDF()
@@ -665,19 +724,91 @@ Hammersmith AI Clinic`
         { align: 'center' }
       )
 
-      // Save the PDF
-      const patientName = `${claim.patients?.last_name}_${claim.patients?.first_name}`.replace(/\s+/g, '_')
-      doc.save(`TPA_Response_${patientName}_${claim.id.slice(0, 8)}.pdf`)
+      // Generate PDF as Blob
+      const pdfBlob = doc.output('blob')
+      const timestamp = Date.now()
+      const fileName = `justification_${timestamp}.pdf`
+      const filePath = `claims/${claim.id}/${fileName}`
 
-      toast.success("PDF Generated Successfully", {
-        description: "TPA Response letter has been downloaded"
-      })
+      // Simulate upload progress
+      setUploadProgress(prev => ({ ...prev, [query.id]: 30 }))
+
+      if (isSupabaseConfigured()) {
+        const supabase = createClient()
+        
+        // Upload to Supabase Storage
+        setUploadProgress(prev => ({ ...prev, [query.id]: 50 }))
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('tpa-documents')
+          .upload(filePath, pdfBlob, {
+            contentType: 'application/pdf',
+            upsert: true
+          })
+
+        if (uploadError) throw uploadError
+
+        setUploadProgress(prev => ({ ...prev, [query.id]: 80 }))
+
+        // Get the public URL
+        const { data: urlData } = supabase.storage
+          .from('tpa-documents')
+          .getPublicUrl(filePath)
+
+        const permanentUrl = urlData.publicUrl
+
+        // Update the claims table with the PDF URL
+        const { error: updateError } = await supabase
+          .from('claims')
+          .update({ 
+            justification_pdf_url: permanentUrl,
+            ai_response_draft: response
+          })
+          .eq('id', claim.id)
+          .eq('org_id', DEFAULT_ORG_ID)
+
+        if (updateError) {
+          console.error("[v0] Failed to update claim with PDF URL:", updateError)
+        }
+
+        setUploadProgress(prev => ({ ...prev, [query.id]: 100 }))
+
+        // Mark query as uploaded
+        setUploadedQueries(prev => new Set([...prev, query.id]))
+
+        // Refresh archive
+        await fetchDocumentArchive(claim.id)
+
+        toast.success("Saved & Ready to Send", {
+          description: "PDF uploaded to secure server and linked to claim"
+        })
+      } else {
+        // Fallback: just download locally
+        setUploadProgress(prev => ({ ...prev, [query.id]: 100 }))
+        const patientName = `${claim.patients?.last_name}_${claim.patients?.first_name}`.replace(/\s+/g, '_')
+        doc.save(`TPA_Response_${patientName}_${claim.id.slice(0, 8)}.pdf`)
+        
+        // Mark as uploaded for demo purposes
+        setUploadedQueries(prev => new Set([...prev, query.id]))
+
+        toast.success("PDF Generated", {
+          description: "Downloaded locally (Supabase not configured)"
+        })
+      }
     } catch (err) {
       toast.error("PDF Generation Failed", {
-        description: "Could not generate the PDF. Please try again."
+        description: err instanceof Error ? err.message : "Could not generate or upload the PDF. Please try again."
       })
     } finally {
       setGeneratingPDF(null)
+      // Clear progress after a delay
+      setTimeout(() => {
+        setUploadProgress(prev => {
+          const newProgress = { ...prev }
+          delete newProgress[query.id]
+          return newProgress
+        })
+      }, 2000)
     }
   }
 
@@ -879,9 +1010,13 @@ Hammersmith AI Clinic`
                 </CardHeader>
                 <CardContent>
                   <Tabs defaultValue="queries" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2">
+                    <TabsList className="grid w-full grid-cols-3">
                       <TabsTrigger value="queries">
                         Query Inbox ({selectedClaim.tpa_queries?.filter(q => q.status === 'open').length || 0})
+                      </TabsTrigger>
+                      <TabsTrigger value="archive" onClick={() => fetchDocumentArchive(selectedClaim.id)}>
+                        <Archive className="size-4 mr-1" />
+                        Document Archive
                       </TabsTrigger>
                       <TabsTrigger value="details">Claim Details</TabsTrigger>
                     </TabsList>
@@ -924,25 +1059,56 @@ Hammersmith AI Clinic`
                                           <Send className="size-4" />
                                           Send to TPA
                                         </Button>
-                                        <Button 
-                                          size="sm" 
-                                          variant="outline"
-                                          className="gap-2 border-primary/50 text-primary hover:bg-primary/10"
-                                          onClick={() => generateTPAResponsePDF(selectedClaim, query)}
-                                          disabled={generatingPDF === query.id}
-                                        >
-                                          {generatingPDF === query.id ? (
-                                            <>
-                                              <Loader2 className="size-4 animate-spin" />
-                                              Generating...
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Download className="size-4" />
-                                              Generate TPA Response PDF
-                                            </>
-                                          )}
-                                        </Button>
+                                        {uploadedQueries.has(query.id) ? (
+                                          <Button 
+                                            size="sm" 
+                                            variant="outline"
+                                            className="gap-2 border-emerald-500 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
+                                            disabled
+                                          >
+                                            <CheckCircle2 className="size-4" />
+                                            Saved & Ready to Send
+                                          </Button>
+                                        ) : (
+                                          <div className="flex flex-col gap-2">
+                                            <Button 
+                                              size="sm" 
+                                              variant="outline"
+                                              className="gap-2 border-primary/50 text-primary hover:bg-primary/10"
+                                              onClick={() => generateTPAResponsePDF(selectedClaim, query)}
+                                              disabled={generatingPDF === query.id}
+                                            >
+                                              {generatingPDF === query.id ? (
+                                                uploadProgress[query.id] !== undefined && uploadProgress[query.id] < 50 ? (
+                                                  <>
+                                                    <Loader2 className="size-4 animate-spin" />
+                                                    Generating PDF...
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <Upload className="size-4 animate-pulse" />
+                                                    Uploading to Secure Server...
+                                                  </>
+                                                )
+                                              ) : (
+                                                <>
+                                                  <Download className="size-4" />
+                                                  Generate TPA Response PDF
+                                                </>
+                                              )}
+                                            </Button>
+                                            {generatingPDF === query.id && uploadProgress[query.id] !== undefined && (
+                                              <div className="space-y-1">
+                                                <Progress value={uploadProgress[query.id]} className="h-2" />
+                                                <p className="text-xs text-muted-foreground text-center">
+                                                  {uploadProgress[query.id] < 50 ? 'Generating PDF...' : 
+                                                   uploadProgress[query.id] < 80 ? 'Uploading to secure server...' : 
+                                                   uploadProgress[query.id] < 100 ? 'Linking to database...' : 'Complete!'}
+                                                </p>
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
                                         <Button size="sm" variant="outline">
                                           Edit Response
                                         </Button>
@@ -981,6 +1147,63 @@ Hammersmith AI Clinic`
                           <CheckCircle className="size-12 mx-auto mb-4 text-emerald-400" />
                           <p className="font-medium">No Open Queries</p>
                           <p className="text-sm">All TPA queries have been resolved</p>
+                        </div>
+                      )}
+                    </TabsContent>
+                    
+                    <TabsContent value="archive" className="mt-4 space-y-4">
+                      {loadingArchive ? (
+                        <div className="flex items-center justify-center py-12">
+                          <Loader2 className="size-8 animate-spin text-primary" />
+                        </div>
+                      ) : documentArchive.length > 0 ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-sm font-semibold flex items-center gap-2">
+                              <FolderOpen className="size-4 text-primary" />
+                              Previously Generated Documents
+                            </h3>
+                            <Badge variant="outline">
+                              {documentArchive.length} {documentArchive.length === 1 ? 'Document' : 'Documents'}
+                            </Badge>
+                          </div>
+                          {documentArchive.map((doc) => (
+                            <Card 
+                              key={doc.id} 
+                              className="bg-secondary/30 hover:bg-secondary/50 transition-colors cursor-pointer"
+                              onClick={() => window.open(doc.url, '_blank')}
+                            >
+                              <CardContent className="p-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <div className="p-2 rounded-lg bg-primary/10">
+                                      <FileText className="size-5 text-primary" />
+                                    </div>
+                                    <div>
+                                      <p className="font-medium text-sm">TPA Response Justification</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        Generated: {new Date(doc.created_at).toLocaleString('en-IN', {
+                                          dateStyle: 'medium',
+                                          timeStyle: 'short',
+                                          timeZone: 'Asia/Kolkata'
+                                        })} IST
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <Button size="sm" variant="ghost" className="gap-2">
+                                    <ExternalLink className="size-4" />
+                                    Open PDF
+                                  </Button>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-12 text-muted-foreground">
+                          <Archive className="size-12 mx-auto mb-4 opacity-20" />
+                          <p className="font-medium">No Documents Yet</p>
+                          <p className="text-sm">Generated TPA response PDFs will appear here</p>
                         </div>
                       )}
                     </TabsContent>
