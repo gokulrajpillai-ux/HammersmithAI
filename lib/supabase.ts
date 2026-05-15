@@ -51,10 +51,17 @@ export interface Claim {
   patient_id: string
   package_id: string
   hospital_bill_amount: number
-  status: 'pending' | 'approved' | 'denied' | 'under_review'
+  status: 'pending' | 'approved' | 'denied' | 'under_review' | 'AI-AUDITED'
   admission_date?: string
   clinical_notes?: string
   created_at?: string
+  // Private insurance columns
+  insurance_provider?: string | null
+  policy_number?: string | null
+  pre_auth_status?: 'pending' | 'approved' | 'rejected' | 'info_requested' | null
+  pre_auth_requested_at?: string | null
+  tpa_queries?: TPAQuery[] | null
+  ai_response_draft?: string | null
   // Joined data
   patients?: {
     id: string
@@ -68,6 +75,16 @@ export interface Claim {
     procedure_name: string
     kasp_rate_2026: number
   }
+}
+
+export interface TPAQuery {
+  id: string
+  query_text: string
+  query_type: 'medical_necessity' | 'documentation' | 'coding' | 'pricing' | 'other'
+  raised_at: string
+  responded_at?: string | null
+  response_text?: string | null
+  status: 'open' | 'responded' | 'resolved'
 }
 
 // Default organization ID for Hammersmith AI Clinic (demo fallback)

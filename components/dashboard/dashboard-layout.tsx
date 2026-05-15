@@ -20,6 +20,7 @@ import {
   Lock,
   IndianRupee,
   Brain,
+  Building,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -36,6 +37,7 @@ const navItems: NavItem[] = [
   { label: "ABHA Onboarding", icon: <UserCheck className="size-5" />, href: "/abha-onboarding" },
   { label: "Consent Manager", icon: <Lock className="size-5" />, href: "/consent-manager" },
   { label: "AI Claims", icon: <Brain className="size-5" />, href: "/dashboard/claims" },
+  { label: "Private TPA", icon: <Building className="size-5" />, href: "/dashboard/tpa" },
   { label: "Prior Auth", icon: <ShieldCheck className="size-5" />, href: "/prior-auth" },
   { label: "Medical Coding", icon: <FileCode className="size-5" />, href: "/medical-coding" },
   { label: "Payer Claims", icon: <IndianRupee className="size-5" />, href: "/payer-claims" },
