@@ -25,8 +25,11 @@ import {
   User,
   CreditCard,
   HelpCircle,
-  Loader2
+  Loader2,
+  Download
 } from "lucide-react"
+import { jsPDF } from "jspdf"
+import autoTable from "jspdf-autotable"
 import Link from "next/link"
 import { createClient, isSupabaseConfigured, DEFAULT_ORG_ID } from "@/lib/supabase"
 import type { Claim, TPAQuery } from "@/lib/supabase"
@@ -181,6 +184,7 @@ export default function TPAManagementPage() {
   const [draftingQuery, setDraftingQuery] = useState<string | null>(null)
   const [aiResponses, setAiResponses] = useState<Record<string, string>>({})
   const [currentTime, setCurrentTime] = useState(Date.now())
+  const [generatingPDF, setGeneratingPDF] = useState<string | null>(null)
 
   // Update current time every minute for IRDAI timer
   useEffect(() => {
@@ -412,6 +416,268 @@ We trust this addresses your concerns. Please feel free to reach out for any fur
 Regards,
 Revenue Cycle Management Team
 Hammersmith AI Clinic`
+    }
+  }
+
+  // Generate TPA Response PDF
+  const generateTPAResponsePDF = async (claim: Claim, query: TPAQuery) => {
+    const response = aiResponses[query.id]
+    if (!response) {
+      toast.error("No AI response available", {
+        description: "Please draft an AI response first"
+      })
+      return
+    }
+
+    setGeneratingPDF(query.id)
+
+    try {
+      const doc = new jsPDF()
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const leftMargin = 20
+      const rightMargin = 20
+      const contentWidth = pageWidth - leftMargin - rightMargin
+      let yPos = 15
+
+      // Get current date/time in IST (Kochi timezone)
+      const now = new Date()
+      const istOptions: Intl.DateTimeFormatOptions = {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      }
+      const formattedDateTime = now.toLocaleString('en-IN', istOptions)
+
+      // === LETTERHEAD ===
+      // Teal accent bar at top
+      doc.setFillColor(0, 150, 136)
+      doc.rect(0, 0, pageWidth, 8, 'F')
+
+      yPos = 20
+
+      // Hospital Logo placeholder (circle)
+      doc.setFillColor(0, 150, 136)
+      doc.circle(leftMargin + 8, yPos + 5, 8, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(10)
+      doc.setFont("helvetica", "bold")
+      doc.text("H", leftMargin + 5.5, yPos + 8)
+
+      // Hospital Name
+      doc.setTextColor(0, 90, 80)
+      doc.setFontSize(20)
+      doc.setFont("helvetica", "bold")
+      doc.text("HAMMERSMITH HEALTH AI", leftMargin + 22, yPos + 4)
+      
+      doc.setTextColor(80, 80, 80)
+      doc.setFontSize(10)
+      doc.setFont("helvetica", "normal")
+      doc.text("A Unit of Hammersmith Pharmaceuticals Pvt. Ltd.", leftMargin + 22, yPos + 11)
+
+      // Contact info on right side
+      doc.setFontSize(8)
+      doc.setTextColor(100, 100, 100)
+      const rightX = pageWidth - rightMargin
+      doc.text("123 Medical Center Road, Kochi, Kerala 682001", rightX, yPos, { align: 'right' })
+      doc.text("Tel: +91 484 2345678 | Email: rcm@hammersmithai.com", rightX, yPos + 5, { align: 'right' })
+      doc.text("ROHINI ID: HOSP-2024-KL-0847 | CIN: U85110KL2020PTC123456", rightX, yPos + 10, { align: 'right' })
+
+      yPos += 25
+
+      // Divider line
+      doc.setDrawColor(0, 150, 136)
+      doc.setLineWidth(0.5)
+      doc.line(leftMargin, yPos, pageWidth - rightMargin, yPos)
+
+      yPos += 10
+
+      // === DOCUMENT INFO ===
+      doc.setTextColor(0, 0, 0)
+      doc.setFontSize(9)
+      doc.setFont("helvetica", "normal")
+      doc.text(`Date & Time: ${formattedDateTime} IST`, leftMargin, yPos)
+      doc.text(`Ref: TPA-RES-${claim.id.slice(0, 8).toUpperCase()}`, rightX, yPos, { align: 'right' })
+
+      yPos += 8
+
+      // === TITLE ===
+      doc.setFillColor(240, 248, 255)
+      doc.rect(leftMargin, yPos, contentWidth, 10, 'F')
+      doc.setFontSize(12)
+      doc.setFont("helvetica", "bold")
+      doc.setTextColor(0, 80, 120)
+      doc.text("TPA QUERY RESPONSE - MEDICAL JUSTIFICATION", pageWidth / 2, yPos + 7, { align: 'center' })
+
+      yPos += 18
+
+      // === TO SECTION ===
+      doc.setTextColor(0, 0, 0)
+      doc.setFontSize(10)
+      doc.setFont("helvetica", "bold")
+      doc.text("To:", leftMargin, yPos)
+      doc.setFont("helvetica", "normal")
+      doc.text(`${claim.insurance_provider}`, leftMargin + 10, yPos)
+      yPos += 5
+      doc.text("Claims Processing Department", leftMargin + 10, yPos)
+
+      yPos += 12
+
+      // === PATIENT & POLICY DETAILS TABLE ===
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Patient & Policy Information', '']],
+        body: [
+          ['Patient Name', `${claim.patients?.first_name} ${claim.patients?.last_name}`],
+          ['ABHA ID', claim.patients?.abha_id || 'N/A'],
+          ['Policy Number', claim.policy_number || 'N/A'],
+          ['Insurance Provider', claim.insurance_provider || 'N/A'],
+          ['Admission Date', claim.admission_date || 'N/A'],
+          ['Procedure', `${claim.medical_packages?.procedure_name} (${claim.medical_packages?.package_code})`],
+          ['Claim Amount', formatINR(claim.hospital_bill_amount)]
+        ],
+        theme: 'grid',
+        headStyles: { 
+          fillColor: [0, 150, 136], 
+          textColor: 255,
+          fontStyle: 'bold'
+        },
+        styles: { 
+          fontSize: 9,
+          cellPadding: 3
+        },
+        columnStyles: {
+          0: { fontStyle: 'bold', cellWidth: 50 },
+          1: { cellWidth: contentWidth - 50 }
+        },
+        margin: { left: leftMargin, right: rightMargin }
+      })
+
+      yPos = (doc as any).lastAutoTable.finalY + 10
+
+      // === TPA QUERY SECTION ===
+      doc.setFillColor(255, 243, 224)
+      doc.rect(leftMargin, yPos, contentWidth, 8, 'F')
+      doc.setFontSize(10)
+      doc.setFont("helvetica", "bold")
+      doc.setTextColor(180, 100, 0)
+      doc.text("TPA QUERY", leftMargin + 3, yPos + 5.5)
+      yPos += 12
+
+      doc.setTextColor(0, 0, 0)
+      doc.setFontSize(9)
+      doc.setFont("helvetica", "normal")
+      
+      const queryTypeLabel = query.query_type.replace('_', ' ').toUpperCase()
+      doc.setFont("helvetica", "bold")
+      doc.text(`Query Type: ${queryTypeLabel}`, leftMargin, yPos)
+      doc.setFont("helvetica", "normal")
+      doc.text(`Raised on: ${new Date(query.raised_at).toLocaleString('en-IN', istOptions)}`, leftMargin + 80, yPos)
+      yPos += 6
+
+      const queryLines = doc.splitTextToSize(query.query_text, contentWidth)
+      doc.text(queryLines, leftMargin, yPos)
+      yPos += queryLines.length * 4 + 8
+
+      // === AI RESPONSE / CLINICAL RATIONALE ===
+      doc.setFillColor(232, 245, 233)
+      doc.rect(leftMargin, yPos, contentWidth, 8, 'F')
+      doc.setFontSize(10)
+      doc.setFont("helvetica", "bold")
+      doc.setTextColor(46, 125, 50)
+      doc.text("CLINICAL RATIONALE & RESPONSE", leftMargin + 3, yPos + 5.5)
+      yPos += 12
+
+      doc.setTextColor(0, 0, 0)
+      doc.setFontSize(9)
+      doc.setFont("helvetica", "normal")
+
+      const responseLines = doc.splitTextToSize(response, contentWidth)
+      
+      // Check if we need a new page
+      if (yPos + responseLines.length * 4 > 240) {
+        doc.addPage()
+        yPos = 20
+      }
+      
+      doc.text(responseLines, leftMargin, yPos)
+      yPos += responseLines.length * 4 + 15
+
+      // Check if we need a new page for signature section
+      if (yPos > 230) {
+        doc.addPage()
+        yPos = 20
+      }
+
+      // === SIGNATURE SECTION ===
+      doc.setDrawColor(200, 200, 200)
+      doc.setLineWidth(0.3)
+      doc.line(leftMargin, yPos, leftMargin + 80, yPos)
+      
+      yPos += 5
+      doc.setFontSize(9)
+      doc.setFont("helvetica", "bold")
+      doc.text("Treating Physician Signature", leftMargin, yPos)
+      
+      yPos += 15
+      
+      // Digital Stamp Placeholder
+      doc.setDrawColor(0, 150, 136)
+      doc.setLineWidth(1)
+      doc.rect(leftMargin, yPos, 50, 25)
+      doc.setFontSize(7)
+      doc.setTextColor(150, 150, 150)
+      doc.text("[Digital Stamp]", leftMargin + 10, yPos + 14)
+      
+      // Signature details on right
+      doc.setTextColor(0, 0, 0)
+      doc.setFontSize(9)
+      doc.setFont("helvetica", "bold")
+      doc.text("Dr. Hammersmith", leftMargin + 60, yPos + 5)
+      doc.setFont("helvetica", "normal")
+      doc.text("Chief Medical Officer", leftMargin + 60, yPos + 10)
+      doc.text("Hammersmith Health AI", leftMargin + 60, yPos + 15)
+      doc.text("Reg. No: KMC/2020/12345", leftMargin + 60, yPos + 20)
+
+      // === COMPLIANCE FOOTER ===
+      const footerY = doc.internal.pageSize.getHeight() - 15
+      
+      doc.setDrawColor(0, 150, 136)
+      doc.setLineWidth(0.5)
+      doc.line(leftMargin, footerY - 5, pageWidth - rightMargin, footerY - 5)
+      
+      doc.setFontSize(7)
+      doc.setTextColor(100, 100, 100)
+      doc.setFont("helvetica", "italic")
+      doc.text(
+        "Generated by Hammersmith AI Revenue Engine. IRDAI 2026 Compliant Document.",
+        pageWidth / 2,
+        footerY,
+        { align: 'center' }
+      )
+      doc.text(
+        "This document is electronically generated and does not require physical signature for TPA portal submission.",
+        pageWidth / 2,
+        footerY + 4,
+        { align: 'center' }
+      )
+
+      // Save the PDF
+      const patientName = `${claim.patients?.last_name}_${claim.patients?.first_name}`.replace(/\s+/g, '_')
+      doc.save(`TPA_Response_${patientName}_${claim.id.slice(0, 8)}.pdf`)
+
+      toast.success("PDF Generated Successfully", {
+        description: "TPA Response letter has been downloaded"
+      })
+    } catch (err) {
+      toast.error("PDF Generation Failed", {
+        description: "Could not generate the PDF. Please try again."
+      })
+    } finally {
+      setGeneratingPDF(null)
     }
   }
 
@@ -653,10 +919,29 @@ Hammersmith AI Clinic`
                                       <pre className="text-xs whitespace-pre-wrap font-sans">
                                         {aiResponses[query.id]}
                                       </pre>
-                                      <div className="flex gap-2 mt-4">
+                                      <div className="flex flex-wrap gap-2 mt-4">
                                         <Button size="sm" className="gap-2">
                                           <Send className="size-4" />
                                           Send to TPA
+                                        </Button>
+                                        <Button 
+                                          size="sm" 
+                                          variant="outline"
+                                          className="gap-2 border-primary/50 text-primary hover:bg-primary/10"
+                                          onClick={() => generateTPAResponsePDF(selectedClaim, query)}
+                                          disabled={generatingPDF === query.id}
+                                        >
+                                          {generatingPDF === query.id ? (
+                                            <>
+                                              <Loader2 className="size-4 animate-spin" />
+                                              Generating...
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Download className="size-4" />
+                                              Generate TPA Response PDF
+                                            </>
+                                          )}
                                         </Button>
                                         <Button size="sm" variant="outline">
                                           Edit Response
